@@ -1,0 +1,228 @@
+﻿# workflow.yaml
+# software-factory Meta Skill 工作流定义
+# Schema: v1
+
+version: v1
+workflow: software-factory
+description: |
+  从需求到可运行软件的 8 Stage 流水线。
+  每个 Stage 声明：依赖 Skill、输入 Artifact、输出 Artifact、失败处理。
+
+phases:
+
+  - id: phase0
+    name: Skill Environment Preparation
+    required: true
+    parallel: false
+    stages:
+      - id: phase0.scan
+        name: 扫描依赖
+        skills: []
+        input:
+          - user_input
+        output:
+          - phase0/missing-skills.md
+        on_failure: stop
+
+      - id: phase0.install
+        name: 安装缺失 Skill
+        skills:
+          - skill-installer
+        input:
+          - phase0/missing-skills.md
+        output:
+          - phase0/install-log.md
+        gating:
+          when: "phase0/missing-skills.md != empty"
+          mode_inherit_from: install_mode   # interactive | auto
+        on_failure: ask_user
+
+      - id: phase0.verify
+        name: 校验 Skills 可用
+        skills: []
+        input:
+          - $CODEX_HOME/skills
+        output:
+          - phase0/phase0-report.md
+        on_failure: "retry(2) then ask_user"
+
+  - id: phase1
+    name: Requirement Assessment
+    required: true
+    parallel: false
+    stages:
+      - id: phase1.detect_mode
+        name: 自动识别 Idea / Spec
+        skills: []
+        input:
+          - user_input.text
+        output:
+          - phase1/mode.json
+        on_failure: default_to_idea
+
+      - id: phase1.idea
+        name: Idea Mode 需求补全
+        skills:
+          - requirement-analysis
+        input:
+          - user_input.text
+          - phase1/mode.json
+        output:
+          - requirements/requirement-analysis.md
+          - requirements/raw-input.md
+        gating:
+          when: 'phase1/mode.json.mode == "idea"'
+        on_failure: ask_user
+
+      - id: phase1.spec
+        name: Spec Mode 结构化整理
+        skills:
+          - documentation
+        input:
+          - user_input.text
+          - phase1/mode.json
+        output:
+          - requirements/raw-input.md
+          - requirements/gap-list.md
+        gating:
+          when: 'phase1/mode.json.mode == "spec"'
+        on_failure: ask_user
+
+      - id: phase1.prd
+        name: 生成统一 PRD
+        skills:
+          - documentation
+        input:
+          - requirements/requirement-analysis.md    # idea
+          - requirements/raw-input.md               # spec
+        output:
+          - requirements/PRD.md
+          - requirements/AcceptanceCriteria.md
+        on_failure: retry(1)
+
+  - id: phase2
+    name: Software Factory Workflow
+    required: true
+    parallel: false
+    stages:
+      - id: stage1.requirement_spec
+        name: Requirement Specification
+        skills:
+          - requirement-analysis
+          - documentation
+        input:
+          - requirements/requirement-analysis.md
+        output:
+          - requirements/PRD.md
+          - requirements/UserStory.md
+          - requirements/AcceptanceCriteria.md
+        on_failure: "retry(1) then ask_user"
+
+      - id: stage2.product_design
+        name: Product Design
+        skills:
+          - product-design
+          - prototype
+        input:
+          - requirements/PRD.md
+        output:
+          - design/prototype/
+          - design/ui-spec.md
+        skip_when: 'project_type in ["cli", "backend-only"]'
+        on_failure: retry(1)
+
+      - id: stage3.ui_design
+        name: UI Design
+        skills:
+          - ui-design
+        input:
+          - design/ui-spec.md
+        output:
+          - design/design-system.md
+          - design/component-spec.md
+        skip_when: 'project_type in ["cli", "backend-only"]'
+        on_failure: non_blocking_warning
+
+      - id: stage4.architecture
+        name: Architecture Design
+        skills:
+          - architecture-design
+        input:
+          - requirements/PRD.md
+          - design/ui-spec.md        # optional
+        output:
+          - design/architecture.md
+          - design/api-spec.md
+          - design/db-schema.md
+        on_failure: "retry(1) then ask_user"
+
+      - id: stage5.implementation
+        name: Implementation
+        skills:
+          - coding
+        input:
+          - design/architecture.md
+          - design/db-schema.md
+          - design/api-spec.md
+        output:
+          - development/source-code/
+        on_failure: "retry(1) then ask_user"
+
+      - id: stage6.build_and_run
+        name: Build & Run
+        skills:
+          - build
+          - deploy
+        input:
+          - development/source-code/
+        output:
+          - development/runtime.log
+          - development/health-check.json
+        on_failure: "retry(2) then ask_user"
+
+      - id: stage7.browser_validation
+        name: Browser Validation
+        skills:
+          - browser-automation
+          - playwright
+        input:
+          - development/health-check.json        # url field
+          - design/ui-spec.md                   # optional
+        output:
+          - testing/validation-report.md
+          - delivery/screenshots/
+        skip_when: 'project_type in ["cli", "backend-only"]'
+        on_failure: non_blocking_warning
+
+      - id: stage8.test_and_review
+        name: Testing & Code Review
+        skills:
+          - testing
+          - code-review
+        input:
+          - development/source-code/
+          - testing/validation-report.md
+        output:
+          - testing/test-report.md
+          - testing/code-review-report.md
+        on_failure: non_blocking_warning
+
+termination:
+  success_when: "all_required_stages.status == completed"
+  blocked_when: |
+    连续 3 次同类失败且用户选择不接管。
+
+controls:
+  pause:
+    command: "$software-factory pause"
+    state_file: workspace/.workflow-state.json
+  resume:
+    command: "$software-factory --resume"
+    reads: workspace/.workflow-state.json
+  rerun_stage:
+    command: "$software-factory --rerun=<stageId>"
+    effect: |
+      从指定 Stage 重跑；上游 Artifact 必须仍存在，否则需先 rebuild。
+  dry_run:
+    command: "$software-factory --dry-run"
+    effect: "只执行到 Phase 1，不进入 Phase 2"

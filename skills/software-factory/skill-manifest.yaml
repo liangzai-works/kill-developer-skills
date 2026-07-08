@@ -1,0 +1,76 @@
+﻿# skill-manifest.yaml
+# 声明 software-factory Meta Skill 的运行时依赖。
+# Phase 0 启动时据此与 $CODEX_HOME/skills 已装清单做差集。
+
+manifest_version: v1
+owner: kill-developer-skills
+
+# 通用全局 Skills —— 任何 workflow 都至少要有这些
+required-skills:
+  - id: documentation
+    purpose: PRD / 文档结构化
+    source: bundled
+    install: official
+
+# 按 workflow 分类的依赖 —— workflow.yaml 通过这里的 id 解析
+workflows:
+
+  - id: software-factory
+    description: 主工作流（Idea / Spec → 8 Stage 流水线）
+    required-skills:
+      - id: requirement-analysis
+        purpose: 需求拆解 / Idea 模式补全
+        install_hint: "$skill-installer requirement-analysis"
+      - id: documentation
+        purpose: PRD / Design / Report 模板填充
+      - id: product-design
+        purpose: 页面规划、用户旅程
+        optional_when: [cli, backend-only]
+      - id: ui-design
+        purpose: 设计系统、组件库
+        optional_when: [cli, backend-only]
+      - id: architecture-design
+        purpose: 系统架构、API、数据库 Schema
+      - id: coding
+        purpose: 实现业务代码
+      - id: build
+        purpose: 编译 / 打包 / 镜像
+      - id: deploy
+        purpose: 启动服务、健康检查
+      - id: browser-automation
+        purpose: 浏览器自动化
+        install_hint: "$browser control-in-app-browser"
+      - id: playwright
+        purpose: UI 验证、截图
+        install_hint: "playwright install"
+      - id: testing
+        purpose: 单元 / 集成 / E2E
+      - id: code-review
+        purpose: 代码评审报告
+
+# 扩展工作流（按需启用，不会强制安装）
+optional-workflows:
+  - id: java-workflow
+    required-skills: [coding-java-spring, jpa-spec, sql-design]
+  - id: python-workflow
+    required-skills: [coding-python-fastapi, sql-design]
+  - id: frontend-workflow
+    required-skills: [coding-frontend-react, ui-design]
+  - id: aiops-workflow
+    required-skills: [anomaly-detection, metric-analysis, log-investigation]
+
+# 安装策略
+install_policy:
+  default_mode: interactive        # interactive | auto
+  registry: "$CODEX_HOME/skills"
+  allow_third_party: true
+  verify_after_install: true
+
+# 健康检查
+healthcheck:
+  each_skill:
+    - must_have: SKILL.md
+    - must_readable: true
+    - has_metadata: true           # name / description / version 三件套
+  overall:
+    - all_required: present
