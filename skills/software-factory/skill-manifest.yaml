@@ -1,22 +1,27 @@
-﻿# skill-manifest.yaml
-# 声明 software-factory Meta Skill 的运行时依赖。
+# skill-manifest.yaml
+# software-factory Meta Skill 的运行时依赖清单 (v0.2.0)
 # Phase 0 启动时据此与 $CODEX_HOME/skills 已装清单做差集。
 
-manifest_version: v1
+manifest_version: v0.2.0
 owner: kill-developer-skills
+compatible_skill_version: ">=0.2.0,<0.3.0"
 
 # 通用全局 Skills —— 任何 workflow 都至少要有这些
 required-skills:
   - id: documentation
-    purpose: PRD / 文档结构化
+    purpose: 文档结构化
+    source: bundled
+    install: official
+  - id: docx
+    purpose: 生成 .docx (02_详细设计文档 强制走此 skill)
     source: bundled
     install: official
 
-# 按 workflow 分类的依赖 —— workflow.yaml 通过这里的 id 解析
+# 按 workflow 分类的依赖
 workflows:
 
   - id: software-factory
-    description: 主工作流（Idea / Spec → 8 Stage 流水线）
+    description: 主工作流 (Idea / Spec → 9 Stage 流水线)
     required-skills:
       - id: requirement-analysis
         purpose: 需求拆解 / Idea 模式补全
@@ -27,14 +32,14 @@ workflows:
         purpose: 页面规划、用户旅程
         optional_when: [cli, backend-only]
       - id: ui-design
-        purpose: 设计系统、组件库
+        purpose: 设计系统、组件库、原型
         optional_when: [cli, backend-only]
       - id: architecture-design
         purpose: 系统架构、API、数据库 Schema
       - id: coding
         purpose: 实现业务代码
       - id: build
-        purpose: 编译 / 打包 / 镜像
+        purpose: 编译 / 打包
       - id: deploy
         purpose: 启动服务、健康检查
       - id: browser-automation
@@ -48,14 +53,14 @@ workflows:
       - id: code-review
         purpose: 代码评审报告
 
-# 扩展工作流（按需启用，不会强制安装）
+# 扩展工作流 (按需启用, 不会强制安装)
 optional-workflows:
   - id: java-workflow
     required-skills: [coding-java-spring, jpa-spec, sql-design]
   - id: python-workflow
     required-skills: [coding-python-fastapi, sql-design]
   - id: frontend-workflow
-    required-skills: [coding-frontend-react, ui-design]
+    required-skills: [coding-frontend-vue, ui-design]
   - id: aiops-workflow
     required-skills: [anomaly-detection, metric-analysis, log-investigation]
 
