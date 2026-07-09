@@ -1,4 +1,4 @@
-﻿# kill-developer-skills
+# kill-developer-skills
 
 > 一个 Codex Meta Skill —— 把"想法 / 需求"端到端变成"可运行软件"的工作流编排器。
 
@@ -63,7 +63,7 @@ kill-developer-skills
 ## 快速开始
 
 1. 把 `skills/software-factory/` 注册到 Codex（个人市场或 `$CODEX_HOME/skills`）。
-2. 触发：`$software-factory 开发一个医院索引巡检系统`
+2. 触发：`$software-factory 开发一个运维巡检系统`
 3. Meta Skill 会自动：
    - 扫描 `skill-manifest.yaml`，检查依赖。
    - 提示缺失 Skills，确认后安装。

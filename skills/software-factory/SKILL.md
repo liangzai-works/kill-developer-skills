@@ -6,7 +6,7 @@ description: |
   详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。
   生成 Heading 段落时会禁用模板自带的自动编号 (避免与手写编号双重叠加)。
   所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.4.0
+version: 0.4.1
 type: meta
 ---
 
@@ -91,11 +91,11 @@ skill 仓库**故意不**带 `templates/详细设计模板.docx` (用户私有�
 1. 检查 `$CODEX_HOME/skills/software-factory/templates/详细设计模板.docx` 是否存在
 2. 若不存在, 询问用户:
    > "本 skill 用公司详细设计模板作为样式基线. 请提供 .docx 模板的绝对路径
-   > (回车跳过则用 docx skill 默认模板, 但会失去 CEC 封面/标题样式)."
+   > (回车跳过则用 docx skill 默认模板, 但会失去 公司品牌封面/标题样式)."
 3. 收到路径后, 复制到 `$CODEX_HOME/skills/software-factory/templates/详细设计模板.docx`
 4. 记录此次复制到 `phase0-template-setup.log` 备查
 
-**已安装示例**: 当前仓库 `C:\work\skills-workspace\kill-developer-skills\skills\software-factory\templates\详细设计模板.docx` 已通过开发期手动复制到位 (442KB, 9 节 + CEC 封面).
+**已安装示例**: 当前仓库 `C:\work\skills-workspace\kill-developer-skills\skills\software-factory\templates\详细设计模板.docx` 已通过开发期手动复制到位 (442KB, 9 节 + 公司品牌封面).
 
 ## 5.2 ⚠️ 模板自动编号陷阱 (v0.4.0 必修)
 
@@ -161,7 +161,14 @@ $software-factory --template=D:/company/详细设计模板.docx
 $software-factory --rerun=stage2
 ```
 
-## 10. v0.4.0 变更日志
+## 10. v0.4.1 变更日志
+- v0.4.1: 清理公司专属描述, 准备公网分发
+  - SKILL.md / coding.md 去掉 CEC 引用
+  - examples 真实项目名 -> 通用示例
+  - README.md / docs/usage.md 触发示例同步替换
+  - 模板文件 (.docx) 仍在 .gitignore, 用户私有资产
+
+
 
 - v0.4.0: 修复模板自动编号双重叠加 bug
   - `prompts/architecture.md` 新增 Step 1.5: 强制 `disable_auto_number(p)` 把 numId=0

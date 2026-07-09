@@ -1,4 +1,4 @@
-﻿# docs/usage.md
+# docs/usage.md
 
 > 怎么用 `kill-developer-skills`。
 
@@ -17,7 +17,7 @@ cp -r skills/software-factory $CODEX_HOME/marketplaces/personal/.codex-plugin/
 ## 2. 触发方式
 
 ```text
-$software-factory 开发一个医院索引巡检系统
+$software-factory 开发一个运维巡检系统
 $software-factory --mode=spec
 $software-factory --dry-run
 $software-factory --resume
