@@ -24,13 +24,15 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
 
 - 根: `<项目名>工作空间/`
 - 详细设计 .docx 模板查找 (4 级优先级 + fallback, 见 Step 1)
+- 架构图: 见 Step 2.0 (调 scripts/render_arch.py)
 
-## 输出 (3 个产物文件, 必给)
+## 输出 (4 个产物文件, 必给)
 
 ```
 <项目名>工作空间/
 ├── 02_<项目名>_详细设计文档.docx     ⭐ 本 Stage 重点
 ├── 03_<项目名>_架构设计.md
+├── 03_<项目名>_架构图.png            🆕 v0.5.0: 由 render_arch.py 自动生成
 └── 04_<项目名>_数据库设计.md         (有 DB 时)
 ```
 
@@ -99,11 +101,61 @@ for p in doc.paragraphs:
 
 **验收**: 生成的 .docx 重新打开, Heading 段落前不再有 "1." / "1.1" 自动编号, 只有我们写的 "一、" / "1.1" 文字.
 
+### Step 2.0 - 🆕 架构图自动生成 (v0.5.0 起强制)
+
+> 这一步必须在写 `03_<项目名>_架构设计.md` **之前** 先做, 因为 PNG 是 Stage 2 (详细设计) 的"2. 总体设计"插图来源.
+
+**0. 调用 render_arch.py** (skill 内置脚本):
+
+```bash
+# 方式 A: 先粗列层, 用 --layers 传 JSON 出占位 PNG
+python skills/software-factory/scripts/render_arch.py \
+  --layers '[["接入层","Nginx / SLB"],["应用层","Spring Boot 3.x + Vue 3"],["服务层","工作台 / 节点管理 / 应用管理"],["数据层","MySQL 8.0"],["基础设施","Docker / 监控"]]' \
+  --out <项目名>工作空间/03_<项目名>_架构图.png \
+  --title "<项目名> 系统架构图"
+```
+
+**1. 然后写** `03_<项目名>_架构设计.md`, 至少含:
+
+```markdown
+# 03_<项目名>_架构设计
+
+## 分层架构 (用于 render_arch.py 解析)
+
+| 层 | 主要组件 |
+|----|----------|
+| 接入层 | Nginx / SLB |
+| 应用层 | Spring Boot 3.x / Vue 3 |
+| 服务层 | 工作台 / 节点管理 / 应用管理 |
+| 数据层 | MySQL 8.0 / Redis |
+| 基础设施 | Docker / 监控 |
+```
+
+(可用表格或 `## 层名` + 子项两种格式, render_arch.py 都认)
+
+**2. 调 render_arch.py 用 .md 重新出最终图** (覆盖占位 PNG):
+
+```bash
+python skills/software-factory/scripts/render_arch.py \
+  --src <项目名>工作空间/03_<项目名>_架构设计.md \
+  --out <项目名>工作空间/03_<项目名>_架构图.png \
+  --title "<项目名> 系统架构图"
+```
+
+**3. verify**: PNG 文件存在, size > 50KB. 不达标则:
+
+- 调 `python scripts/render_arch.py --check` 看 matplotlib/字体是否就绪
+- 失败回退: 在 `03_<项目名>_架构设计.md` 里写一段 ASCII 分层图 (作为 fallback)
+
+**4. 嵌入详细设计**: Step 1 生成 `02_<项目名>_详细设计文档.docx` 时, 在 "2. 总体设计" 或 "3. 模块设计" 段插入这张 PNG (`docx skill` 嵌入图片能力).
+
 ### Step 2 - 架构设计 (Markdown)
 
-- 模块划分 + 时序图 (mermaid / ascii)
+- 业务模块划分 (按业务, 不按 SpringBoot 技术分层)
+  - 例: 首页 / 节点管理 / 用户管理, 不是 controller/service/dao
+- 时序图 (mermaid / ascii, 复杂流程用 mermaid)
 - 技术栈表 + 端口 / 路径约定
-- API 列表
+- API 列表 (在 Step 1 的 .docx "4. 接口设计" 里展开)
 
 ### Step 3 - 数据库设计
 
@@ -119,8 +171,12 @@ for p in doc.paragraphs:
 - 把模板文件提交到 skill 仓库 (.gitignore 已排除)
 - 生成 Heading 段落后**忘记调 disable_auto_number** (双重编号 bug)
 - 不写 SQL DDL 而只写 Markdown (后续 Stage 找不到入口)
+- 🆕 **用临时脚本 (matplotlib / mermaid) 画架构图** — 必须用 skill 内置的 `scripts/render_arch.py`
+- 🆕 跳 Step 2.0 直接出 .md — PNG 没生成, Stage 2 插图就缺
+- 🆕 把架构图写成 ASCII 凑数 — 除非 render_arch.py 工具链缺失 (在 --check 失败时才允许)
 
 ## 工具调用约定
 
 - docx skill: 调 `skills/docx/SKILL.md` 实现 .docx 生成
 - 模板读取: `python-docx` 或 Node `docx` 库均可
+- 🆕 架构图: 必须 `python skills/software-factory/scripts/render_arch.py`, 不要再手画

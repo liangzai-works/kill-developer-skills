@@ -1,25 +1,25 @@
 # workflow.yaml
-# software-factory Meta Skill 工作流定义 (v0.3.0)
+# software-factory Meta Skill 工作流定义 (v0.5.0)
 # Schema: v1.2
 # 约定: 所有产物落在单一工作空间目录, 文件名 NN_<项目名>_<文档名>.<ext>
 # 详细设计文档按 3 级优先级 + fallback 读 .docx 模板
+# 架构设计阶段 (Stage 3) 必须调 scripts/render_arch.py 生成架构图 PNG
 
-version: v0.3.0
+version: v0.5.0
 workflow: software-factory
 description: |
-  从需求到可运行软件的流水线。
-  所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
-  详细设计文档按优先级读"详细设计模板.docx"作为样式基线。
-
+  从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
+  详细设计文档按优先级读 `详细设计模板.docx` 作为样式基线。
+  架构图自动生成 (scripts/render_arch.py) 是 Stage 3 的内置步骤.
 # -------------------------------------------------------------------
 # 工作空间根 - 旧版 (requirements/ design/ development/ testing/)
-# 已废弃, 全部走 workspace_dir 单目录模式
+# 已废弃: 全部按 workspace_dir 单目录模式
 # -------------------------------------------------------------------
 workspace:
-  root_pattern: "<项目名>工作空间/"     # 缺省按"<项目名>工作空间/"建
+  root_pattern: "<项目名>工作空间/"     # 缺省按 "<项目名>工作空间/" 建
   file_naming: "NN_<项目名>_<文档名>.<ext>"
   nn_padding: 2                         # 01 / 02 / ...
-  # 注意: 这是 **生成产物目录**, 不放模板资源!
+  # 注意: 这是**生成产物目录**, 不放模板资源!
 
 detail_template:
   # 模板查找优先级 (从上往下, 命中即用, 都未命中走 fallback)
@@ -29,13 +29,13 @@ detail_template:
       description: "用户通过 --template=<绝对路径> 显式指定"
     - id: project_override
       location: "<workspace_dir>/详细设计模板.docx"
-      description: "项目级覆盖 (用户为这个项目专门放了一份)"
+      description: "项目级覆盖 (用户为这个项目专门放了)"
     - id: skill_bundled
       location: "skills/software-factory/templates/详细设计模板.docx"
-      description: "skill 自带, 随 skill 安装到 $CODEX_HOME/skills/ 一起分发"
+      description: "skill 自带, 随 skill 安装到 $CODEX_HOME/skills/ 一同分发"
     - id: fallback
       location: "(docx skill default)"
-      description: "调用 docx skill 用其默认模板生成"
+      description: "调 docx skill 用其默认模板生成"
   # 模板本身是用户私有资产, 不入 git, 不复制进项目工作空间
   gitignore: "skills/**/templates/详细设计模板.docx"
   missing_action: ask_user   # ask_user | use_fallback
@@ -45,6 +45,21 @@ detail_template:
       2. <workspace_dir>/详细设计模板.docx
       3. skills/software-factory/templates/详细设计模板.docx
     请提供绝对路径, 或留空用 docx skill 默认模板.
+
+architecture_diagram:
+  # v0.5.0 新增: 架构图自动生成能力
+  enabled: true
+  script: "scripts/render_arch.py"
+  output: "03_<项目名>_架构图.png"
+  embedding_target: "02_<项目名>_详细设计文档.docx"
+  input_source: "03_<项目名>_架构设计.md"   # Stage 3 产出作为输入
+  when: "always"                             # always | optional
+  fallback_on_missing_tooling: "ascii"       # matplotlib 不在时回退 ASCII
+  font_fallback:
+    - "SimHei"
+    - "Microsoft YaHei"
+    - "PingFang SC"
+    - "DejaVu Sans"
 
 phases:
 
@@ -69,6 +84,12 @@ phases:
         input: [$CODEX_HOME/skills]
         output: [phase0-report.md]
         on_failure: "retry(2) then ask_user"
+      - id: phase0.template
+        name: 检查详细设计模板就位
+        input: [$CODEX_HOME/skills/software-factory/templates/]
+        output: [phase0-template-setup.log]
+        gating: "always"
+        on_missing: detail_template.missing_action
 
   - id: phase1
     name: 需求评估
@@ -78,7 +99,7 @@ phases:
       - id: phase1.detect_mode
         name: 识别 Idea / Spec 模式
         input: [user_input.text]
-        output: [01_<项目名>_需求假设清单.md]   # 补全用, 标 [待确认]
+        output: [01_<项目名>_需求假设清单.md]   # 补齐全/缺/待确认
         on_failure: default_to_idea
       - id: phase1.spec
         name: 需求规格说明书
@@ -101,16 +122,28 @@ phases:
         name: 详细设计 (按 detail_template.lookup_priority 找模板)
         input:
           - 01_<项目名>_需求规格说明书.md
+          - 03_<项目名>_架构设计.md
+          - 03_<项目名>_架构图.png
           - detail_template.lookup_priority     # 命中位置决定样式基线
         output: [02_<项目名>_详细设计文档.docx]
         uses_skill: docx
         on_missing_template: detail_template.missing_action
         on_failure: "retry(1) then ask_user"
+        notes: |
+          1) 模板存在时复用 styles.xml / numbering.xml / theme1.xml
+          2) 嵌入 03_<项目名>_架构图.png 到"2. 总体设计"或"3. 模块设计"段
+          3) 走 Step 1.5 disable_auto_number 把 Heading numId=0 (避免双重编号)
 
       - id: stage3.architecture
-        name: 架构设计
-        input: [01_<项目名>_需求规格说明书.md, 02_<项目名>_详细设计文档.docx]
-        output: [03_<项目名>_架构设计.md]
+        name: 架构设计 (含架构图自动生成)
+        input: [01_<项目名>_需求规格说明书.md]
+        output:
+          - 03_<项目名>_架构设计.md
+          - 03_<项目名>_架构图.png             # 由 architecture_diagram.script 生成
+        steps:
+          - "写 03_<项目名>_架构设计.md (模块划分 + 技术栈 + API + 部署)"
+          - "调 python scripts/render_arch.py --src 03_<项目名>_架构设计.md --out 03_<项目名>_架构图.png --title '<项目名> 系统架构图'"
+          - "verify: PNG 文件存在, size > 50KB"
         on_failure: "retry(1) then ask_user"
 
       - id: stage4.db_design
@@ -121,7 +154,7 @@ phases:
         on_failure: non_blocking_warning
 
       - id: stage5.ui_design
-        name: UI 设计 (含前端必选)
+        name: UI 设计 (前端型必需)
         input: [02_<项目名>_详细设计文档.docx]
         output:
           - 04b_<项目名>_UI设计.md
@@ -147,11 +180,11 @@ phases:
         on_failure: "retry(2) then ask_user"
 
       - id: stage8.browser_validation
-        name: 浏览器验收 (前端必选)
+        name: 浏览器验收 (前端必需)
         input: [源代码/<项目名>-server/health-check.json, 04b_<项目名>_UI设计.md]
         output:
           - 06_<项目名>_验收报告.md
-          - screenshots/<NN>-<含义>.png
+          - screenshots/<NN>-<语义>.png
         gating: "has_frontend == true"
         on_failure: non_blocking_warning
 
@@ -166,8 +199,7 @@ phases:
 termination:
   success_when: "all_required_stages.status == completed"
   blocked_when: |
-    连续 3 次同类失败且用户选择不接管。
-
+    连续 3 次同类失败且用户选择不接管.
 controls:
   pause:
     command: "$software-factory pause"
@@ -178,7 +210,7 @@ controls:
   rerun_stage:
     command: "$software-factory --rerun=<stageId>"
     effect: |
-      从指定 Stage 重跑; 上游 Artifact 必须仍存在, 否则需先 rebuild。
+      从指定 Stage 重跑; 上游 Artifact 必须仍存在, 否则需重 build.
   dry_run:
     command: "$software-factory --dry-run"
     effect: "只执行到 Phase 1, 不进入 Phase 2"
@@ -187,9 +219,14 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.5.0:
+      - 新增架构图自动生成: scripts/render_arch.py (matplotlib 后端, 中文 fallback, 三种输入格式)
+      - SKILL.md 搂5.3 文档化架构图生成规则
+      - workflow.yaml Stage 3 产出新增 03_<项目名>_架构图.png, 步骤化生成
+      - Stage 2 输入新增 03_<项目名>_架构图.png (嵌入详细设计文档)
   - v0.3.0:
       - 修复: 模板查找路径从 "<项目名>工作空间/" 扩展到 4 级优先级
       - 模板改放 skills/software-factory/templates/, 加 .gitignore
       - 新增 --template=<绝对路径> 参数
-  - v0.2.0: NN_<项目名>_<文档名> 命名 + 单工作空间 + 中文文件名
+  - v0.2.0: NN_<项目名>_<文档名> 命名 + 单工作空间目录 + 中文文件名
   - v0.1.0: 初始 scaffold
