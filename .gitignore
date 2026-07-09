@@ -32,3 +32,7 @@ workspace/.workflow-state.json
 .env.*
 *.pem
 *.key
+
+# 详细设计 .docx 模板（用户私有资产, 不入 git, skill 安装时若缺失需用户自备）
+# 位置: skills/software-factory/templates/详细设计模板.docx
+skills/**/templates/详细设计模板.docx

@@ -1,14 +1,15 @@
 # workflow.yaml
-# software-factory Meta Skill 工作流定义 (v0.2.0)
-# Schema: v1.1
+# software-factory Meta Skill 工作流定义 (v0.3.0)
+# Schema: v1.2
 # 约定: 所有产物落在单一工作空间目录, 文件名 NN_<项目名>_<文档名>.<ext>
+# 详细设计文档按 3 级优先级 + fallback 读 .docx 模板
 
-version: v0.2.0
+version: v0.3.0
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。
   所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
-  详细设计文档读"详细设计模板.docx"作为样式基线 (若有)。
+  详细设计文档按优先级读"详细设计模板.docx"作为样式基线。
 
 # -------------------------------------------------------------------
 # 工作空间根 - 旧版 (requirements/ design/ development/ testing/)
@@ -18,10 +19,32 @@ workspace:
   root_pattern: "<项目名>工作空间/"     # 缺省按"<项目名>工作空间/"建
   file_naming: "NN_<项目名>_<文档名>.<ext>"
   nn_padding: 2                         # 01 / 02 / ...
-  detail_template:
-    filename: "详细设计模板.docx"        # 可选, 若存在则作为 02_详细设计 的样式基线
-    location: workspace_dir             # 与产物同目录
-    fallback: "docx skill 默认模板"
+  # 注意: 这是 **生成产物目录**, 不放模板资源!
+
+detail_template:
+  # 模板查找优先级 (从上往下, 命中即用, 都未命中走 fallback)
+  lookup_priority:
+    - id: explicit_arg
+      location: "$user_arg.template"
+      description: "用户通过 --template=<绝对路径> 显式指定"
+    - id: project_override
+      location: "<workspace_dir>/详细设计模板.docx"
+      description: "项目级覆盖 (用户为这个项目专门放了一份)"
+    - id: skill_bundled
+      location: "skills/software-factory/templates/详细设计模板.docx"
+      description: "skill 自带, 随 skill 安装到 $CODEX_HOME/skills/ 一起分发"
+    - id: fallback
+      location: "(docx skill default)"
+      description: "调用 docx skill 用其默认模板生成"
+  # 模板本身是用户私有资产, 不入 git, 不复制进项目工作空间
+  gitignore: "skills/**/templates/详细设计模板.docx"
+  missing_action: ask_user   # ask_user | use_fallback
+  message_when_missing: |
+    未在以下位置找到 `详细设计模板.docx`:
+      1. $user_arg.template (--template 参数)
+      2. <workspace_dir>/详细设计模板.docx
+      3. skills/software-factory/templates/详细设计模板.docx
+    请提供绝对路径, 或留空用 docx skill 默认模板.
 
 phases:
 
@@ -75,12 +98,13 @@ phases:
         on_failure: non_blocking_warning
 
       - id: stage2.detail_design
-        name: 详细设计 (读 .docx 模板)
+        name: 详细设计 (按 detail_template.lookup_priority 找模板)
         input:
           - 01_<项目名>_需求规格说明书.md
-          - 详细设计模板.docx            # 可选, 存在则用为样式基线
+          - detail_template.lookup_priority     # 命中位置决定样式基线
         output: [02_<项目名>_详细设计文档.docx]
-        uses_skill: docx                  # 强制走 docx skill, 不自造
+        uses_skill: docx
+        on_missing_template: detail_template.missing_action
         on_failure: "retry(1) then ask_user"
 
       - id: stage3.architecture
@@ -101,7 +125,7 @@ phases:
         input: [02_<项目名>_详细设计文档.docx]
         output:
           - 04b_<项目名>_UI设计.md
-          - 源代码/<项目名>-web/prototype.html    # 至少 1 个 HTML 原型
+          - 源代码/<项目名>-web/prototype.html
         gating: "has_frontend == true"
         skip_when: 'project_type in ["cli","backend-only"]'
         on_failure: non_blocking_warning
@@ -129,7 +153,6 @@ phases:
           - 06_<项目名>_验收报告.md
           - screenshots/<NN>-<含义>.png
         gating: "has_frontend == true"
-        # 前端型项目永远不 skip, hello world 也必须落浏览器报告 + 截图
         on_failure: non_blocking_warning
 
       - id: stage9.test_and_review
@@ -159,3 +182,14 @@ controls:
   dry_run:
     command: "$software-factory --dry-run"
     effect: "只执行到 Phase 1, 不进入 Phase 2"
+  template_override:
+    command: "$software-factory --template=<绝对路径>"
+    effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
+
+changelog:
+  - v0.3.0:
+      - 修复: 模板查找路径从 "<项目名>工作空间/" 扩展到 4 级优先级
+      - 模板改放 skills/software-factory/templates/, 加 .gitignore
+      - 新增 --template=<绝对路径> 参数
+  - v0.2.0: NN_<项目名>_<文档名> 命名 + 单工作空间 + 中文文件名
+  - v0.1.0: 初始 scaffold
