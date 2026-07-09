@@ -23,7 +23,7 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
 ## 工作空间
 
 - 根: `<项目名>工作空间/`
-- 详细设计 .docx 模板查找 (3 级优先级 + fallback, 见 Step 1)
+- 详细设计 .docx 模板查找 (4 级优先级 + fallback, 见 Step 1)
 
 ## 输出 (3 个产物文件, 必给)
 
@@ -63,11 +63,41 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
 - 输出: `02_<项目名>_详细设计文档.docx`
 - 模板文件本身不参与文档内容, 只贡献样式 / 字体 / 标题级别 / 页眉页脚等
 
-**注意**:
+### Step 1.5 - ⚠️ 禁用模板自动编号 (关键, 不做会双重编号)
 
-- 不要把模板拷贝到生成产物目录 (它是 skill 资源, 不是项目产物)
-- 若模板缺失但用户希望使用, 应先询问用户:
-  > "未在工作空间 / skill 目录找到 `详细设计模板.docx`, 是否提供绝对路径? 留空则用 docx skill 默认模板."
+**问题**: 公司详细设计模板的 `styles.xml` 通常把 Heading 1/2/3 样式绑到 `numbering.xml` 的某个 `numId` (本仓库随附的模板就是 numId=5), Word 打开后会**自动**给段落加上 "1." "1.1" "1.1.1" 前缀.
+
+**症状**: 生成的 .docx 打开看到 "1\t一、文档说明  1.1\t1.1 内容概要" 这种**双重编号**.
+
+**根因**:
+- 模板的 styles.xml 里: `<w:style w:type="paragraph" w:styleId="Heading1"><w:pPr><w:numPr><w:numId w:val="5"/><w:ilvl w:val="0"/></w:numPr></w:pPr>...</w:style>`
+- python-docx `doc.add_paragraph(text, style="Heading 1")` 只是引用样式, 不复制样式属性, 所以段落会继承自动编号
+- 我们又手动写了 "一、" "1.1" 文字, 结果 Word 渲染时 "1" + "一、文档说明" = "1  一、文档说明"
+
+**修复** (生成脚本必须包含):
+
+```python
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+def disable_auto_number(paragraph):
+    """在该段落上覆盖 numId=0, 禁用 Word 自动编号"""
+    pPr = paragraph._p.get_or_add_pPr()
+    for old in pPr.findall(qn("w:numPr")):
+        pPr.remove(old)
+    numPr = OxmlElement("w:numPr")
+    ilvl = OxmlElement("w:ilvl"); ilvl.set(qn("w:val"), "0")
+    numId = OxmlElement("w:numId"); numId.set(qn("w:val"), "0")  # 0 = 不编号
+    numPr.append(ilvl); numPr.append(numId)
+    pPr.append(numPr)
+
+# 在每个 Heading 1/2/3 段落 add 后立即调用
+for p in doc.paragraphs:
+    if p.style and p.style.name in ("Heading 1","Heading 2","Heading 3"):
+        disable_auto_number(p)
+```
+
+**验收**: 生成的 .docx 重新打开, Heading 段落前不再有 "1." / "1.1" 自动编号, 只有我们写的 "一、" / "1.1" 文字.
 
 ### Step 2 - 架构设计 (Markdown)
 
@@ -87,6 +117,7 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
 - 不阅读 .docx 模板就直接生成 (会失去样式基线)
 - 把模板文件复制进 `<项目名>工作空间/` (污染产物目录)
 - 把模板文件提交到 skill 仓库 (.gitignore 已排除)
+- 生成 Heading 段落后**忘记调 disable_auto_number** (双重编号 bug)
 - 不写 SQL DDL 而只写 Markdown (后续 Stage 找不到入口)
 
 ## 工具调用约定
