@@ -7,7 +7,7 @@
 # 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
 # v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.5.2
+version: v0.5.3
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
@@ -52,6 +52,7 @@ heading_fix:
   required: true                                  # 不可跳过, docx skill 完成后必须执行
   script: "scripts/fix_docx_headings.py"
   input: "02_<项目名>_详细设计文档.docx"           # Stage 2 产出
+  # v0.5.3: 模板自动编号一定关闭, 手写编号在骨架里, 渲染 = 单一手写
   in_place: true
   exit_code_pass: 0
   forbidden_alternatives:                         # 不允许的替代方案
@@ -321,6 +322,16 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.5.3:
+      title: "恢复标题手写编号 (fix_docx_headings.py 退化症补丁)"
+      changes:
+        - "templates/02_详细设计文档_九节骨架.md 恢复 ## 一、文档说明 / ### 1.1 内容概要 手写编号"
+        - "prompts/architecture.md Step 1 + Step 1.5 重写, 强调 v0.5.3 编号策略 + 病史"
+        - "SKILL.md 搂5.2 加修正说明, 搂10 加本条"
+        - "workflow.yaml heading_fix 加 v0.5.3 注释"
+      feedback_history:
+        - "用户跑 taskmgr demo 后反馈: 生成的详细设计文档并不符合模板, 标题的前面数字也没了"
+        - "根因: v0.5.1 走了 删除手写 + 关自动 互斥路径"
   - v0.5.2:
       title: "Stage 8 强制打开右侧 in-app browser 面板"
       changes:

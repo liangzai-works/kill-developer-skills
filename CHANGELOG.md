@@ -1,6 +1,31 @@
-# CHANGELOG
 
-## v0.5.2 — Stage 8 强制打开右侧 in-app browser 面板
+## v0.5.3 — 恢复标题手写编号 (fix_docx_headings.py 退化症补丁)
+
+用户在 taskmgr demo 上跑 v0.5.1 反馈: "生成的详细设计文档并不符合模板, 标题的前面数字也没了". 排查发现 v0.5.1 走了 "删除手写 + 关模板自动" 两条互斥的修复路径, 导致 .docx 标题完全没编号.
+
+### 改动
+- `templates/02_详细设计文档_九节骨架.md`: 恢复 `## 一、文档说明` / `### 1.1 内容概要` 手写编号 (v0.5.0 时代被 v0.5.1 误删)
+- `prompts/architecture.md` Step 1 + Step 1.5: 重写, 强调 v0.5.3 编号策略 + "不允许做的事" 加新禁令
+- `SKILL.md` 搂5.2 + 搂10: 加 v0.5.3 修正说明 + 本条 changelog
+- `workflow.yaml` heading_fix + changelog: 加 v0.5.3 注释
+
+### 未自动修复 (需要用户提供反馈)
+- "详细设计文档不符合模板" - 不知道具体不符哪里, 可能涉及样式基线 / 封面 / 字体 / 配色. 请提供 taskmgr 生成的 .docx 截图或文件
+- "测试过程没打开浏览器" - v0.5.2 已经加了 Stage 8 强制步骤, 但 taskmgr 跑的时候没生效. 请提供 `06_*_验收报告.md` 或 `screenshots/08-*.png` 以便诊断
+
+### 反馈来源
+"taskmgr 项目测试" 后用户反馈: "生成的详细设计文档并不符合模板, 且标题的前面数字也没了. 测试过程中也没有打开浏览器"
+
+### 文件清单
+| 文件 | 变化 |
+|------|------|
+| `skills/software-factory/templates/02_详细设计文档_九节骨架.md` | 恢复手写 一、 / 1.1 编号 |
+| `skills/software-factory/prompts/architecture.md` | Step 1 + Step 1.5 重写 |
+| `skills/software-factory/SKILL.md` | v0.5.3 + 搂5.2 顶部说明 + 搂10 changelog |
+| `skills/software-factory/workflow.yaml` | version v0.5.2 → v0.5.3 + heading_fix 注释 + changelog |
+| `CHANGELOG.md` | 顶部加 v0.5.3 条目 |
+
+---## v0.5.2 — Stage 8 强制打开右侧 in-app browser 面板
 
 把"用户实时看到测试过程"从 agent 自觉做成 skill 强约束.
 

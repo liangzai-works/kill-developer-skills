@@ -1,7 +1,7 @@
 # prompts/architecture.md
 
 > 用于 software-factory Stage 4 (含详细设计 / 架构 / 数据库) 的引导式 Prompt.
-> v0.5.1: 两个强约束: ① Heading 走 `scripts/fix_docx_headings.py` 一刀切, ② 业务模块强制 (非技术分层).
+> v0.5.3: 恢复手写编号 "一. " / "1.1"; fix_docx_headings.py 仍强制调, 兜底关模板自动编号.
 
 ## 你是谁
 
@@ -65,23 +65,26 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
   9. 附录
 - 输出: `02_<项目名>_详细设计文档.docx`
 - 模板文件本身不参与文档内容, 只贡献样式 / 字体 / 标题级别 / 页眉页脚等
-- **第 1 级 Heading (例如 "## 文档说明") 文本里不要手写 "一." "1." 等编号** — 由模板的 Heading 样式自动渲染, 手写会产生双重编号.
+- **v0.5.3 编号策略**: Heading 文本里**必须手写** "一、/" "1.1" 等中文 / 阿拉伯编号 (骨架 `templates/02_详细设计文档_九节骨架.md` 已经填好). 模板自带的自动编号会被 Step 1.5 的 fix_docx_headings.py 关掉, 单一来源 = 单一编号.
 
-### Step 1.5 - ⚠️ 标题双重编号: 强制调 fix_docx_headings.py (v0.5.1 强约束)
+### Step 1.5 - ⚠️ 模板自动编号兜底关掉 (v0.5.1 起强制, v0.5.3 保留)
 
 **问题**: 公司详细设计模板的 `styles.xml` 通常把 Heading 1/2/3 样式绑到 `numbering.xml` 的某个 `numId` (本仓库随附的模板就是 numId=5), Word 打开后会**自动**给段落加上 "1." "1.1" "1.1.1" 前缀.
 
-**症状**: 生成的 .docx 打开看到 "1	文档说明  1.1	1.1 内容概要" 这种**双重编号**.
+**v0.5.1 退化症**: 我们曾走过 "删除手写编号 + 关自动编号" 这条路, 结果渲染出完全没有编号的标题 (用户在 taskmgr demo 上反馈 "标题的前面数字也没了").
 
-**根因**:
-- 模板的 styles.xml 里: `<w:style w:type="paragraph" w:styleId="Heading1"><w:pPr><w:numPr><w:numId w:val="5"/><w:ilvl w:val="0"/></w:numPr></w:pPr>...</w:style>`
-- python-docx `doc.add_paragraph(text, style="Heading 1")` 只是引用样式, 不复制样式属性, 所以段落会继承自动编号
-- 我们又手动写了 "一、" "1.1" 文字, 结果 Word 渲染时 "1" + "文档说明" = "1  文档说明" → 两套编号堆叠
+**v0.5.3 修复**: 恢复手写编号 (骨架里重新有 `## 一、文档说明` / `### 1.1 内容概要`), 用 fix_docx_headings.py 关掉模板自动编号. 渲染 = 单一来源手写编号, 既不双重叠加, 也不会丢编号.
 
-**修复 (强制, 不走捷径)**: docx skill 生成 .docx **之后**, **必须**调用 skill 内置脚本 `scripts/fix_docx_headings.py`:
+**根因 / 上下文**:
+
+- 模板的 styles.xml 里: `<w:style w:type="paragraph" w:styleId="Heading1"><w:pPr><w:numPr><w:numId w:val="5"/><w:ilvl w:val="0"/></w:numPr></w:pPr>...</w:style>` — Heading 1/2/3 绑到 numId=5, Word 默认会给段落加 "1." / "1.1" 前缀.
+- 我们的 9 节骨架 (`templates/02_详细设计文档_九节骨架.md`) 已经**手写**了中文 / 阿拉伯编号, 期望 Word 渲染就显示这套手写编号.
+- 但模板的自动编号一旦保留, Word 会同时输出 "1." + "一、文档说明" → 又变回双重叠加. 因此 fix_docx_headings.py 必须把模板绑定的 numId 覆写为 0, 关掉自动编号.
+
+**修复 (强制)**:
 
 ```bash
-# (假设当前目录在工作空间根, 或者传绝对路径)
+# docx skill 生成 .docx 之后, 强制调一次 fix_docx_headings.py
 python skills/software-factory/scripts/fix_docx_headings.py \
   <项目名>工作空间/02_<项目名>_详细设计文档.docx
 ```
@@ -90,18 +93,23 @@ python skills/software-factory/scripts/fix_docx_headings.py \
 
 1. 遍历 .docx 所有段落, 找出 Heading 1/2/3 段落
 2. 强制把段落 pPr 的 numId 覆写为 0 (禁用 Word 自动编号)
-3. 防御性清理文本里残留的 "1. " / "1.1 " / "1\t" / "1.1\t" 阿拉伯前缀
-4. in-place 保存
-5. 打印修改前后的标题数 / numPr 重置数 / 文本清理数
+3. 防御性清理文本里残留的 "1. " / "1.1 " / "1\t" 前缀 (防止之前流程误伤)
+4. in-place 保存, 打印修改前后统计
 
-**验收**: 重新打开修复后的 .docx, Heading 段落前不再有 "1." / "1.1" 自动编号, 也无残留手写编号; 只剩模板的字体 / 字号 / 缩进等样式.
+**验收**:
+
+- 重新打开修复后的 .docx
+- Heading 1 应渲染成 "一、文档说明"  (无前缀数字 + 中文书名号)
+- Heading 2 应渲染成 "1.1 内容概要"  (无前缀数字)
+- 不会有 "1 一、文档说明" / "1.1 1.1 内容概要" 双重叠加
+- 也不会出现 v0.5.1 退化症的完全无编号
 
 **不允许**:
 
 - ❌ 不调 `fix_docx_headings.py` 直接交付 .docx
-- ❌ 试图手工逐段调用 `disable_auto_number(p)` (容易漏掉段落, 不可靠)
-- ❌ 删模板里 numbering.xml 的 numId (会破坏模板多级编号, 后续复用该模板的项目都会断)
-- ❌ 在 9 节骨架文本里手写 "一. " / "1.1 " (即使用了 fix_docx_headings.py 也可能因 OCR 等环节失效)
+- ❌ **v0.5.3 起**: 删掉骨架里的手写编号 (会变成 v0.5.1 退化症: 完全没编号)
+- ❌ 手工逐段调用 `disable_auto_number(p)` (容易漏段, 不可靠)
+- ❌ 删模板里 numbering.xml 的 numId (会破坏模板多级编号, 影响后续复用该模板的项目)
 
 ### Step 2.0 - 🆕 架构图自动生成 (v0.5.0 起强制, v0.5.1 强化业务模块)
 
@@ -199,7 +207,7 @@ python skills/software-factory/scripts/render_arch.py \
 - 把模板文件复制进 `<项目名>工作空间/` (污染产物目录)
 - 把模板文件提交到 skill 仓库 (.gitignore 已排除)
 - ❌ 生成 Heading 段落不调 `scripts/fix_docx_headings.py` (双重编号 bug)
-- ❌ 在 9 节骨架文本里手写 "一、" "1.1" (双重编号 bug)
+- ❌ **v0.5.3 起**: 删掉骨架里的手写编号 (会变成 v0.5.1 退化症: 完全没编号)
 - 不写 SQL DDL 而只写 Markdown (后续 Stage 找不到入口)
 - 🆕 **用临时脚本 (matplotlib / mermaid) 画架构图** — 必须用 skill 内置的 `scripts/render_arch.py`
 - 🆕 跳 Step 2.0 直接出 .md — PNG 没生成, Stage 2 插图就缺
