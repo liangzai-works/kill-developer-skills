@@ -7,7 +7,7 @@
 # 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
 # v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.5.4
+version: v0.5.5
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
@@ -52,7 +52,7 @@ heading_fix:
   required: true                                  # 不可跳过, docx skill 完成后必须执行
   script: "scripts/fix_docx_headings.py"
   input: "02_<项目名>_详细设计文档.docx"           # Stage 2 产出
-  # v0.5.3: 模板自动编号一定关闭, 手写编号在骨架里, 渲染 = 单一手写
+  # v0.5.5: 模板自动编号一定关闭, fix_docx_headings.py 默认不剥手写编号, 渲染 = 单一手写
   in_place: true
   exit_code_pass: 0
   forbidden_alternatives:                         # 不允许的替代方案
@@ -335,6 +335,16 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.5.5:
+      title: "fix_docx_headings.py 默认不剥手写编号 (二级标题回归 fix)"
+      changes:
+        - "scripts/fix_docx_headings.py: 新增 --strip-leading-numbers flag (默认 False, 给 v0.5.1 老 docx 用)"
+        - "scripts/fix_docx_headings.py: 默认不调用 strip_leading_numbers, 保留 v0.5.3+ 流程故意写的 '1.1 / 1.1.1' 前缀"
+        - "templates/02_详细设计文档_九节骨架.md: 顶部策略注释升级为 v0.5.5"
+      feedback_history:
+        - "用户跑 DEMO v0.5.4 后反馈: '详细设计的一级标题有了 但是二级标题还是没有'"
+        - "根因: fix_docx_headings.py 默认 strip_leading_numbers 会剥掉 v0.5.3+ 故意写的 1.1 前缀, 模板自动编号又被 numId=0 关了, 所以 H2 渲染没编号"
+
   - v0.5.4:
       title: "iab API 现实落库 (Stage 8 禁掉 hang/undefined 的 API)"
       changes:

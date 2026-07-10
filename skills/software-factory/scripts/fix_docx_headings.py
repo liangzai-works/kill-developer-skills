@@ -15,6 +15,8 @@ fix_docx_headings.py - 修复详细设计 .docx 标题双重编号 bug
   3. 同时, 如果文本里残留 "1. " / "1.1 " 等阿拉伯前缀, 也一并清理 (防御性)
   4. 写回原文件 (in-place)
 
+v0.5.5 约定: 默认 --strip-leading-numbers=False (不再剥 v0.5.3+ 手写编号)
+
 用法:
   python fix_docx_headings.py <workspace>/02_<项目名>_详细设计文档.docx
   python fix_docx_headings.py --check <docx_path>     # 仅检查不修改
@@ -114,7 +116,7 @@ def is_heading_paragraph(p) -> bool:
     return style_id in HEADING_STYLE_IDS
 
 
-def fix_one(docx_path: Path, check_only: bool = False) -> dict:
+def fix_one(docx_path: Path, check_only: bool = False, strip_leading_numbers: bool = False) -> dict:
     """
     修复单个 .docx.
     返回 dict: { "headings": int, "numpr_stripped": int, "text_stripped": int, "modified": bool }
@@ -141,8 +143,11 @@ def fix_one(docx_path: Path, check_only: bool = False) -> dict:
         # 1. 强制 numId=0
         disable_auto_number(p)
         stats["numpr_stripped"] += 1
-        # 2. 清理残留阿拉伯前缀
-        new_text, changed = strip_leading_numbers(p.text)
+        # 2. (v0.5.5 起默认跳过) 清理残留阿拉伯前缀
+        if strip_leading_numbers:
+            new_text, changed = strip_leading_numbers(p.text)
+        else:
+            new_text, changed = p.text, False
         if changed:
             # python-docx 改 runs 比较麻烦, 直接整体替换首个 run 的 text
             # 保留第一个 run, 清空其他
@@ -166,6 +171,8 @@ def main():
     ap.add_argument("--check", action="store_true", help="仅检查, 不修改")
     ap.add_argument("--batch", help="glob 模式批量处理, e.g. '**/02_*详细设计*.docx'")
     ap.add_argument("--no-color", action="store_true", help="禁用彩色输出")
+    ap.add_argument("--strip-leading-numbers", action="store_true",
+                    help="(v0.5.1 老 .docx 用) 显式清理 Heading 文本残留前缀. v0.5.5 起默认不剥")
     args = ap.parse_args()
 
     if not args.docx and not args.batch:
@@ -183,7 +190,7 @@ def main():
     total = {"files": 0, "headings": 0, "numpr_stripped": 0, "text_stripped": 0, "errors": 0}
     for t in targets:
         total["files"] += 1
-        result = fix_one(t, check_only=args.check)
+        result = fix_one(t, check_only=args.check, strip_leading_numbers=args.strip_leading_numbers)
         if "error" in result:
             print(f"[FAIL] {t}: {result['error']}")
             total["errors"] += 1

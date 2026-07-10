@@ -2,7 +2,7 @@
 name: software-factory
 description: |
   元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 9 节骨架保留 一、 / 1.1 手写编号, 文档生成后内置 scripts/fix_docx_headings.py 一刀切关掉模板自动编号, 避免双重叠加且保留中文编号。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.5.4
+version: 0.5.5
 type: meta
 ---
 
@@ -252,6 +252,24 @@ $software-factory --rerun=stage2
 
 1. 用户提到 "生成的详细设计文档并不符合模板" - 这是另一个症状, 可能涉及: docx skill 没有用上 "详细设计模板.docx" 作为样式基线 / 封面丢了 / 字体配色错. **请提供 taskmgr 生成的 .docx 截图或上传文件**, 我才能具体定位.
 2. 用户提到 "测试过程中也没有打开浏览器" - v0.5.2 已经加了 Stage 8 强制步骤, 但需要确认 (a) taskmgr 是不是 `has_frontend` 项目 (b) agent 走 Stage 8 时是否调了 control-in-app-browser. **请提供 taskmgr 工作空间 `06_*_验收报告.md` 或 `screenshots/08-*.png` 的内容**, 我能看到 Stage 8 是否执行.
+
+---
+
+## 15. v0.5.5 变更日志
+
+### v0.5.5 — fix_docx_headings.py 默认不剥手写编号 (二级标题回归 fix)
+
+**症状**: 用户反馈 H1 有编号 "一、", 但 H2 / H3 没编号.
+
+**根因**: `fix_docx_headings.py` 默认调用 `strip_leading_numbers()`, 把 v0.5.3+ 故意写的 "1.1 / 1.1.1" 前缀也剥了. 而模板自动编号又已经被 numId=0 关掉, H2/H3 渲染后就没前缀了. H1 显示 "一、" 不受影响是因为 `^\d+` 正则不匹配中文.
+
+**改动**:
+
+- `scripts/fix_docx_headings.py`: 新增 `--strip-leading-numbers` flag (默认 **False**), `fix_one()` 加同名参数, 默认传 False, 主循环不再剥手写编号.
+- `templates/02_详细设计文档_九节骨架.md`: 顶部 "v0.5.3 编号策略" 注释升到 "v0.5.5 编号策略", 明确 "默认不剥".
+- `SKILL.md` `version: 0.5.4` → `0.5.5`. `workflow.yaml` `version: v0.5.4` → `v0.5.5`.
+
+**反馈来源**: 跑 DEMO 验收后用户原话 "详细设计的一级标题有了 但是二级标题还是没有. 更新skill" → 立即根据实际 H2 数据反向追源, 发现 fix_docx_headings.py 误剥.
 
 ---
 

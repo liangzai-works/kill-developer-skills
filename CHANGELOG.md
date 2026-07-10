@@ -1,3 +1,24 @@
+## v0.5.5 — fix_docx_headings.py 默认不剥手写编号 (二级标题修复)
+
+跑 v0.5.4 DEMO 后用户反馈: "详细设计的一级标题有了 但是二级标题还是没有". 排查发现 fix_docx_headings.py 默认会调 strip_leading_numbers(), 把 v0.5.3+ 故意写的 1.1 / 1.1.1 前缀也剥了. H1 不受影响是因为中文"一、"不在剥除正则里, H2/H3 直接被剥光.
+
+### 改动
+- `scripts/fix_docx_headings.py`: 新增 `--strip-leading-numbers` flag (默认 False, 给 v0.5.1 时代 .docx 用), 主流程默认不剥
+- `templates/02_详细设计文档_九节骨架.md`: 顶部策略注释从 v0.5.3 升到 v0.5.5
+- `SKILL.md` / `workflow.yaml` version `0.5.4` → `0.5.5`
+
+### 行为变化
+| H 文本 | v0.5.4 | v0.5.5 |
+|---|---|---|
+| H1 一、文档说明 | 一、文档说明 | 一、文档说明 (不变) |
+| H2 1.1 内容概要 | 内容概要 (前缀被剥) | 1.1 内容概要 (保留) |
+| H3 3.1.1 问题域 | 问题域 (前缀被剥) | 3.1.1 问题域 (保留) |
+
+### 兼容
+v0.5.4 已装 skill 需 reinstall. 已生成的 docx 直接重跑 `fix_docx_headings.py` 即可 (默认不剥, 编号保留).
+
+---
+
 ## v0.5.4 — iab API 现实落库 (避免 `tab.screenshot` /`evaluate` 死循环)
 
 跑 DEMO 验收时, `tab.screenshot({path})` 在 Codex 内嵌 Chrome 上每次都 hang (`Page.captureScreenshot` + Statsig analytics 阻塞); `tab.content.export()` 抛 `Codex in-app browser does not support`; `tab.playwright.evaluate(...)` 永远返回 `undefined`; `tab.playwright.domSnapshot()` 抛 `incrementalAriaSnapshot is not a function`. 这些"听起来能用其实坏"的方法每次重试都吞 30-60s token.
