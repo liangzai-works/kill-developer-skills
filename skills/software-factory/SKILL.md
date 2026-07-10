@@ -2,7 +2,7 @@
 name: software-factory
 description: |
   元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 9 节骨架保留 一、 / 1.1 手写编号, 文档生成后内置 scripts/fix_docx_headings.py 一刀切关掉模板自动编号, 避免双重叠加且保留中文编号。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.5.3
+version: 0.5.4
 type: meta
 ---
 
@@ -16,6 +16,13 @@ type: meta
 
 ## 2. 不做什么
 - 不重写已有 Skill 能力
+- v0.5.4 起: **不要在 Stage 8 用下面这些看着像但实际坏的 iab API**:
+  - `tab.screenshot({path})` (CDP Page.captureScreenshot 长时间 hang 在 Statsig analytics)
+  - `tab.content.export()` (iab 抛 `Codex in-app browser does not support command`)
+  - `tab.playwright.evaluate(...)` (永远返回 undefined, 不论返回什么类型)
+  - `tab.playwright.domSnapshot()` (抛 `incrementalAriaSnapshot is not a function`)
+  - 必须走 `tab.dom_cua.get_visible_dom()` 拿 node_id → `tab.dom_cua.click({node_id})` /`tab.dom_cua.type({text})`
+  - 落盘截图用本地 headless chrome 兜底 (server 进程拿不到 iab 截图)
 - 不在用户未授权时擅自做技术决策
 - 不为节省 token 跳过阶段 (token 紧张时压缩, 不跳)
 - 不把模板文件当作产物推 git / 复制到项目工作空间
@@ -248,6 +255,38 @@ $software-factory --rerun=stage2
 
 ---
 
+## 14. v0.5.4 变更日志
+
+### v0.5.4 — iab API 现实落库 (本次升级)
+
+**目标**: 把 Codex in-app browser 面板的真实可用 API 写进 skill, 避免 agent 再去试 `tab.screenshot` / `evaluate` / `domSnapshot` 这些"听起来能用但 hang 或 undefined"的方法.
+
+**实测结论**:
+
+| API | 状态 |
+|-----|------|
+| `tab.dom_cua.get_visible_dom()` | ✅ 返回带 node_id 的 DOM 字符串 |
+| `tab.dom_cua.click({node_id})` | ✅ 节点驱动的 click |
+| `tab.dom_cua.type({text})`     | ✅ 焦点元素 type |
+| `tab.cua.click(x,y)`           | ✅ 坐标驱动的 click |
+| `tab.cua.type({text})`         | ✅ 焦点 type |
+| `tab.screenshot({path})`       | ❌ hang (Statsig analytics) |
+| `tab.content.export()`         | ❌ iab 不支持 |
+| `tab.playwright.evaluate(...)` | ❌ 返回 undefined |
+| `tab.playwright.domSnapshot()` | ❌ 抛错 |
+
+**改动**:
+
+- `prompts/review.md` 阶段 2 整段重写, 用 dom_cua + node_id, 移除所有 `tab.locator(...)` /`tab.screenshot` /`tab.evaluate` 字眼.
+- `workflow.yaml` Stage 8 `browser.open_in_app_panel` 的 `forbidden_alternatives` 加 4 条坏 API 禁用.
+- `SKILL.md` 搂2 加 4 条 v0.5.4 新禁令, 搂14 加本 changelog.
+- 新增 `docs/iab-stage8-notes.md` 把踩坑记录独立成文件, 方便 agent 调 `agent.documentation.get('iab-stage8-notes')`.
+
+**反馈来源**: 用户跑 DEMO 验收阶段反馈 `"现在打开了浏览器。把这个思路强制写入 skill 里 其它步骤可以停了先"` → 明确要把"实测可用的 API = dom_cua + node_id, 不要 tab.screenshot / evaluate" 强写到 skill.
+
+---
+
+## 13. v0.5.3 变更日志
 ## 11. v0.5.2 变更日志## 10. v0.5.2 变更日志
 
 ### v0.5.2 — Stage 8 强制打开右侧 in-app browser 面板 (本次升级)

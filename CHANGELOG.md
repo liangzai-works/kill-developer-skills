@@ -1,3 +1,40 @@
+## v0.5.4 — iab API 现实落库 (避免 `tab.screenshot` /`evaluate` 死循环)
+
+跑 DEMO 验收时, `tab.screenshot({path})` 在 Codex 内嵌 Chrome 上每次都 hang (`Page.captureScreenshot` + Statsig analytics 阻塞); `tab.content.export()` 抛 `Codex in-app browser does not support`; `tab.playwright.evaluate(...)` 永远返回 `undefined`; `tab.playwright.domSnapshot()` 抛 `incrementalAriaSnapshot is not a function`. 这些"听起来能用其实坏"的方法每次重试都吞 30-60s token.
+
+### 改动
+- **新增** `skills/software-factory/docs/iab-stage8-notes.md` — iab Stage 8 实战踩坑, 标黑名单 + 给完整最小样板
+- `skills/software-factory/prompts/review.md` — 阶段 2 整段重写, 移除 `tab.locator(...)` /`tab.screenshot` /`tab.evaluate` 字眼, 改用 `tab.dom_cua.get_visible_dom()` 拿 node_id 后 `tab.dom_cua.click({node_id})` /`tab.dom_cua.type({text})`
+- `skills/software-factory/workflow.yaml` — Stage 8 `browser.open_in_app_panel` 的 `forbidden_alternatives` 加 4 条坏 API 禁用项
+- `skills/software-factory/SKILL.md` — 搂2 加 4 条 v0.5.4 新禁令, 搂14 加本 changelog
+
+### 推荐 API (实测可用)
+| API | 说明 |
+|-----|------|
+| `tab.dom_cua.get_visible_dom()`        | 返回带 `node_id` 的 DOM 字符串 |
+| `tab.dom_cua.click({node_id: "<id>"})` | DOM 节点 click |
+| `tab.dom_cua.type({text: "..."})`      | 焦点元素 type |
+| `tab.cua.click(x,y)`                    | 坐标 click (兜底) |
+| `tab.cua.type({text})`                 | 焦点 type (兜底) |
+| `(await browser.capabilities.get("visibility")).set(true)` | 让用户看到右侧面板 |
+
+### 反馈来源
+用户上一轮反馈: `"现在打开了浏览器。把这个思路强制写入 skill 里 其它步骤可以停了先"` → 把"实测可用的 iab API"和"必坏的 API"双双强写到 skill, 避免下次还踩.
+
+### 兼容
+v0.5.3 已装 skill 需 reinstall (`prompts/review.md` 改了).
+
+### 文件清单
+| 文件 | 变化 |
+|------|------|
+| `skills/software-factory/docs/iab-stage8-notes.md` | 新增 |
+| `skills/software-factory/prompts/review.md`       | 阶段 2 重写 |
+| `skills/software-factory/workflow.yaml`           | forbidden_alternatives 加 4 条 |
+| `skills/software-factory/SKILL.md`                | 搂2 + 搂14 加 v0.5.4 |
+| `CHANGELOG.md`                                    | 顶部加 v0.5.4 |
+
+---
+
 
 ## v0.5.3 — 恢复标题手写编号 (fix_docx_headings.py 退化症补丁)
 
