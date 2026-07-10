@@ -1,8 +1,8 @@
 ---
 name: software-factory
 description: |
-  元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 生成 Heading 段落时会禁用模板自带的自动编号 (避免与手写编号双重叠加)。 内置 scripts/render_arch.py 可一键生成系统架构图 (PNG) 并嵌入详细设计文档。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.5.0
+  元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
+version: 0.5.1
 type: meta
 ---
 
@@ -19,7 +19,10 @@ type: meta
 - 不在用户未授权时擅自做技术决策
 - 不为节省 token 跳过阶段 (token 紧张时压缩, 不跳)
 - 不把模板文件当作产物推 git / 复制到项目工作空间
-- 不在 Heading 段落上保留模板的自动编号 (会导致与手写编号双重叠加)
+- 不在没有调 `scripts/fix_docx_headings.py` 的情况下交付 .docx (会导致 Heading 双重编号)
+- 不在 Heading 文本里手写 "一、" / "1.1" (会导致双重编号)
+- 不把架构图按 SpringBoot 技术分层绘制 (接入层 / 应用层 / 服务层 / 数据层 / 基础设施层 等禁止作为主层)
+- 不把"模块划分"按 controller / service / dao / repository 罗列 (必须是业务模块维度)
 
 ## 3. 输入
 
@@ -36,8 +39,8 @@ user_input:
 ```
 <项目名>工作空间/
 ├── 01_<项目名>_需求规格说明书.md
-├── 02_<项目名>_详细设计文档.docx     (样式基线见搂5)
-├── 03_<项目名>_架构设计.md            (架构图/部署图/时序图)
+├── 02_<项目名>_详细设计文档.docx     (样式基线见搂5, 标题修复见搂5.2)
+├── 03_<项目名>_架构设计.md            (按业务模块维度, 见搂5.3)
 ├── 03_<项目名>_架构图.png            (架构图自动生成, 见搂5.3)
 ├── 04_<项目名>_数据库设计.md          (有数据库时)
 ├── 04_<项目名>_建库脚本.sql
@@ -90,36 +93,65 @@ skill 仓库不携带详细设计模板 .docx (避免泄漏公司内部样式 + 
 
 **已安装示意**: 当前仓库 `C:\work\skills-workspace\kill-developer-skills\skills\software-factory\templates\详细设计模板.docx` 已通过开发期手动复制到位 (442KB, 9 节 + 公司品牌封面)。
 
-## 5.2 ⚠️ 模板自动编号避坑 (v0.4.0 必修)
+## 5.2 ⚠️ Heading 双重编号: 强制调用 fix_docx_headings.py (v0.5.1 强约束)
 
-公司详细设计模板的 `styles.xml` 通常把 Heading 1/2/3 绑定到 `numbering.xml` 的某个 numId (本随仓库附的模板就是 numId=5), Word 打开后会**自动**给段落加 "1." "1.1" "1.1.1" 前缀. 如果我们又手动写了"一、" "1.1" 文字, 会出现**双重编号**.
-
-**症状**: 生成的 .docx 打开看到 "1	一、文档说明  1.1	1.1 内容概要"
+**症状**: 详细设计 .docx 打开后看到 "1	文档说明  1.1	1.1 内容概要" 这种双重编号.
 
 **根因**:
-- 模板的 styles.xml 里 `<w:style w:type="paragraph" w:styleId="Heading1"><w:pPr><w:numPr><w:numId w:val="5"/><w:ilvl w:val="0"/></w:numPr></w:pPr></w:style>`
-- python-docx `doc.add_paragraph(text, style="Heading 1")` 只是引用样式, 不复制样式属性, 所以段落会继承自动编号
-- 我们又手动写了"一、" "1.1" 文字, 结果 Word 渲染时"1" + "一、文档说明" = "1  一、文档说明"
+- 公司详细设计模板的 `styles.xml` 把 Heading 1/2/3 样式绑到 `numbering.xml` 的某个 `numId` (仓库随附的模板就是 numId=5), Word 打开后**自动**给段落加 "1." "1.1" "1.1.1"
+- 如果我们又在 Heading 文本里手写 "一." / "1.1" / "1. ", Word 渲染时两个编号源叠加 → 双重编号
 
-**修复** (写在 `prompts/architecture.md` Step 1.5): 在每个 Heading 段落上加 `numId=0` 关闭自动编号, 只保留手写文字.
+**修复 (强约束)**: docx skill 产出 .docx **之后, 交付之前**, **必须**调用:
 
-## 5.3 ⚠️ 架构图自动生成 (v0.5.0 新增)
+```bash
+python skills/software-factory/scripts/fix_docx_headings.py \
+  <项目名>工作空间/02_<项目名>_详细设计文档.docx
+```
 
-详细设计文档里需要"系统架构图"展示接入层/应用层/服务层/数据层/基础设施的分层结构. 之前靠手画或 ASCII 凑数, 现在用内置 `scripts/render_arch.py` 一键生成 PNG, 再嵌入 .docx.
+该脚本是 skill 内置能力, 在 `scripts/fix_docx_headings.py` (~6.7KB, 仅依赖 `python-docx`):
+
+- 遍历 .docx 所有 Heading 1/2/3 段落
+- 强制把段落 pPr 的 `numId` 覆写为 0 (禁用 Word 自动编号)
+- 防御性清理文本里残留的 "1. " / "1.1 " / "1\t" 前缀
+- in-place 保存, 打印修改前后统计
+
+**不允许**:
+
+- ❌ 不调 `fix_docx_headings.py` 直接交付 .docx
+- ❌ 在 9 节骨架文本里手写 "一、" "1.1" 等 (Step 1 已经把骨架改为不带手写编号)
+- ❌ 手工逐段调用 `disable_auto_number(p)` (容易漏段, 不可靠)
+- ❌ 删模板里 numbering.xml 的 numId (会破坏模板多级编号, 影响后续复用该模板的项目)
+
+**验收**:
+
+```bash
+python scripts/fix_docx_headings.py --check <workspace>/02_<项目名>_详细设计文档.docx
+# 期望: 标题数=N (每个 Heading 都列出来了), 不应有未修复的双重编号
+```
+
+## 5.3 ⚠️ 架构图自动生成 (v0.5.0 起强制, v0.5.1 强化业务模块)
+
+详细设计文档里需要"系统架构图". 之前靠手画或 ASCII 凑数, 现在用内置 `scripts/render_arch.py` 一键生成 PNG, 再嵌入 .docx.
+
+**强制业务模块维度 (v0.5.1)**:
+
+- ✅ **正确**: 按业务模块划分 (例: 首页 / 节点管理 / 用户管理), 每模块写"问题描述 + 职责 + 入口 + 依赖"
+- ❌ **错误 (SpringBoot 技术分层)**: 接入层 / 表现层 / 路由层 / API 网关层 / 应用层 / 服务层 / 领域层 / 持久层 / 数据访问层 / 数据层 / 基础设施层
+- ❌ **错误 (按技术组件)**: Controller / Service / Repository / DAO / 中间件层
 
 **调用方式**:
 
 ```bash
-# 方式 1: 从 Markdown 架构描述文件解析
+# 方式 1: 从 Markdown 架构描述文件解析 (推荐)
 python scripts/render_arch.py \
-  --src 03_<项目名>_架构设计.md \
-  --out 03_<项目名>_架构图.png \
+  --src <workspace>/03_<项目名>_架构设计.md \
+  --out <workspace>/03_<项目名>_架构图.png \
   --title "<项目名> 系统架构图"
 
-# 方式 2: 直接传 JSON
+# 方式 2: 直接传业务模块 JSON
 python scripts/render_arch.py \
-  --layers '[["接入层","Nginx / SLB"],["应用层","Spring Boot 3.x + Vue 3"],["服务层","工作台 / 节点管理 / 应用管理"],["数据层","MySQL 8.0 + Redis"],["基础设施","Docker / K8s / 监控"]]' \
-  --out 03_<项目名>_架构图.png \
+  --layers '[["首页","概览仪表盘 / 关键指标"],["节点管理","节点注册 / 健康检查"],["用户管理","增删改查 / 角色权限"],["数据访问","Repository / DB 落地"],["基础设施","Docker / 监控 (备注)"]]' \
+  --out <workspace>/03_<项目名>_架构图.png \
   --title "<项目名> 系统架构图"
 
 # 检查环境依赖
@@ -131,30 +163,34 @@ python scripts/render_arch.py --check
 - 输入支持 3 种: `.md` (表格或标题列表) / `.json` / `--layers=` JSON
 - 中文字体 fallback: SimHei → Microsoft YaHei → PingFang SC → Arial Unicode MS → DejaVu Sans
 - 离线运行, 不依赖网络
-- 输出 PNG, 可被 docx skill 直接嵌入
+- 默认 fallback 也是业务模块示例 (非技术分层), v0.5.1 起改了
 
 **何时调用**: Stage 3 (架构设计) 产出 `03_<项目名>_架构设计.md` 之后, **必须**调用 `render_arch.py` 生成 `03_<项目名>_架构图.png`. 该 PNG 在 Stage 2 (详细设计) 的"2. 总体设计"或"3. 模块设计"里作为插图嵌入.
 
-**重要**: 若架构复杂 (微服务/多集群/数据流), ASCII mermaid 仍可用作补充, 但分层架构主图必须用 `render_arch.py` 出的 PNG.
+**重要**:
+
+- 若架构复杂 (微服务/多集群/数据流), ASCII mermaid 仍可用作补充, 但分层架构主图必须用 `render_arch.py` 出的 PNG
+- PNG 内容按"业务模块"绘制, 不是按 SpringBoot 技术分层 (提交/评审会被打回)
+- 即使是 hello demo, 也至少 2 个业务模块 (例: 首页 + 后台), 不允许空架构图
 
 ## 6. 工作流 (Phase)
 
 ### Phase 0 - 技能环境准备
 - 比对 skill-manifest 与已装 Skills
 - 缺失项走 install_mode (interactive / auto)
-- **新增**: 检查 `templates/详细设计模板.docx` 是否就位, 没有就走 搂5.1 setup
+- 检查 `templates/详细设计模板.docx` 是否就位, 没有就走 搂5.1 setup
 
 ### Phase 1 - 需求评估
 - 识别 Idea / Spec 模式
 - 输出 `01_<项目名>_需求规格说明书.md`
-- 缺失项列 `01_<项目名>_需求假设清单.md` (待确认)
+- **v0.5.1 新增**: 需求规格里必须抽出"业务模块"清单, 作为 Stage 3 模块划分的依据
 
 ### Phase 2 - 9 Stage 流水线
 | 序号 | 名称 | 必需? | 产出 (在工作空间根) |
 |------|------|------|----------------------|
-| 1 | 需求规格 | ✓ | 01_<项目名>_需求规格说明书.md |
-| 2 | 详细设计 | ✓ | 02_<项目名>_详细设计文档.docx (按 搂5 优先级找模板, 含架构图, 走 搂5.2 禁自动编号) |
-| 3 | 架构设计 | ✓ | 03_<项目名>_架构设计.md + **03_<项目名>_架构图.png** (走 搂5.3 调 render_arch.py) |
+| 1 | 需求规格 | ✓ | 01_<项目名>_需求规格说明书.md (含业务模块列表) |
+| 2 | 详细设计 | ✓ | 02_<项目名>_详细设计文档.docx (按 搂5 优先级找模板, 含架构图, 走 搂5.2 调 fix_docx_headings.py 禁自动编号) |
+| 3 | 架构设计 | ✓ | 03_<项目名>_架构设计.md (按业务模块) + **03_<项目名>_架构图.png** (走 搂5.3 调 render_arch.py) |
 | 4 | 数据库设计 | 数据库型必需? | 04_<项目名>_数据库设计.md + 04_<项目名>_建库脚本.sql |
 | 5 | UI 设计 | 前端型必需? | 04b_<项目名>_UI设计.md + 源代码/<项目名>-web/prototype.html |
 | 6 | 实现 | ✓ | 源代码/<项目名>-server/ 与源代码/<项目名>-web/ |
@@ -186,21 +222,45 @@ $software-factory --template=D:/company/详细设计模板.docx
 $software-factory --rerun=stage2
 ```
 
-## 10. v0.5.0 变更日志
-- **v0.5.0**: 新增架构图自动生成能力
+## 10. v0.5.1 变更日志
+
+### v0.5.1 (本次升级, 标题去重 + 业务模块强约束)
+
+**新增 / 强化**:
+
+- 新增 `scripts/fix_docx_headings.py` (~6.7KB, 仅依赖 python-docx): 打开 .docx 后处理, 把 Heading 1/2/3 段落的 pPr numId 强制设为 0 (禁用 Word 自动编号), 同时防御性清理文本里残留的 "1. " / "1.1 " / "1\t" 前缀, in-place 保存.
+- `prompts/architecture.md` Step 1.5 从"软建议禁用自动编号"改成"**强制**调 scripts/fix_docx_headings.py", 加反例清单与禁用项.
+- `templates/02_详细设计文档_九节骨架.md` 去掉 "## 一. 概述" 之类的"手写 + 自动"双重编号标题, 改为 "## 文档说明" (纯文字, 由 Word 自动渲染编号).
+- `templates/03_架构设计.md` 全文重写, 加入"业务模块维度"骨架, 末尾附"反例清单"明确禁止 SpringBoot 技术分层与按 controller/service/repository 罗列.
+- `prompts/architecture.md` Step 2 业务模块划分加"反例清单" (❌ 接入层/应用层/服务层/数据层/基础设施层 / ❌ controller/service/dao), 强制业务模块必须包含"问题描述"列.
+- `prompts/architecture.md` Step 2.0 调用示例从 5 层技术分层改为 5 个业务模块示例.
+- `scripts/render_arch.py` 默认 fallback 由"接入层/应用层/服务层/数据层/基础设施"改为业务模块示例, 并增加"占位提示"提醒 agent 用真实业务模块重画.
+- `SKILL.md` 搂5.2 重新组织: 改为"强制调 scripts/fix_docx_headings.py"为标题级, 把禁用项与验收标准文档化.
+- `SKILL.md` 搂5.3 在原架构图自动生成文档基础上, 顶部加"业务模块维度强制 + 反例清单".
+- `SKILL.md` 搂2"不做什么"加 3 条新约束: 不交付未修复 Heading 的 .docx / 不手写编号 / 架构图不按技术分层.
+- `workflow.yaml` Stage 2 步骤新增 fix_docx_headings 节点.
+
+### 反馈来源
+用户在 v0.3.0 时反馈 "模块划分怎么是 SpringBoot 的结构分层? 不应该是实际的业务模块吗", 落到 v0.5.0 时仍未解决; 用户在 v0.4.0 时反馈 "根据 word 模板生成的新文件的 head 节点前面多了数字 (1 1 文档说明 / 1.1 1.1 内容概要)", 落到 v0.5.0 时仍未稳定修复. v0.5.1 把这两条做成强约束 (脚本兜底 + 反例清单), 不再依赖 agent 自己按 prompt 行事.
+
+### v0.5.0 (上一版)
+- 新增架构图自动生成能力
   - 新增 `scripts/render_arch.py` (matplotlib 后端, 中文 fallback, 支持 .md/.json/CLI 三种输入)
   - `SKILL.md` 搂5.3 文档化架构图生成规则
   - `workflow.yaml` Stage 3 产出新增 `03_<项目名>_架构图.png`
   - `prompts/architecture.md` Step 0 新增"先调用 render_arch.py 再写 markdown"
-- v0.4.2: 新增 WHERE_TEMPLATE.md 解释本地 skill 找模板的 4 级优先级
+
+### v0.4.2: 新增 WHERE_TEMPLATE.md 解释本地 skill 找模板的 4 级优先级
   - SKILL.md / coding.md 去掉 CEC 引用
   - examples 真实项目名 -> 通用示例
   - README.md / docs/usage.md 触发示例同步替换
   - 模板文件 (.docx) 仍在 .gitignore, 用户私有资产
-- v0.4.0: 修复模板自动编号双重叠加 bug
-  - `prompts/architecture.md` 新增 Step 1.5: 强制 `disable_auto_number(p)` 把 numId=0
+
+### v0.4.0: 修复模板自动编号双重叠加 (软约束, v0.5.1 升级为强制)
+  - `prompts/architecture.md` 新增 Step 1.5: 建议 `disable_auto_number(p)` 把 numId=0
   - `SKILL.md` 搂5.2 文档化症状/根因/修复
   - `SKILL.md` 搂5.1 文档化首次安装后模板准备流程
-- v0.3.0: 修复详细设计模板查找路径 (4 级优先级 + `--template=`)
-- v0.2.0: NN_<项目名>_<文档名> 命名约定 + 单工作空间目录 + 中文文件名
-- v0.1.0: 初始 scaffold
+
+### v0.3.0: 修复详细设计模板查找路径 (4 级优先级 + `--template=`)
+### v0.2.0: NN_<项目名>_<文档名> 命名约定 + 单工作空间目录 + 中文文件名
+### v0.1.0: 初始 scaffold

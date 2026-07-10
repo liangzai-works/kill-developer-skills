@@ -1,6 +1,7 @@
 # prompts/architecture.md
 
 > 用于 software-factory Stage 4 (含详细设计 / 架构 / 数据库) 的引导式 Prompt.
+> v0.5.1: 两个强约束: ① Heading 走 `scripts/fix_docx_headings.py` 一刀切, ② 业务模块强制 (非技术分层).
 
 ## 你是谁
 
@@ -53,7 +54,7 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
 
 - 调 docx skill, 把该 .docx 作为样式基线 (styles.xml / numbering.xml / theme1.xml 直接复用)
 - 按 9 节骨架填充内容:
-  1. 概述
+  1. 文档说明
   2. 总体设计
   3. 模块设计
   4. 接口设计
@@ -64,76 +65,76 @@ template_override: ""    # 可选, --template=<绝对路径>; 缺省按下面查
   9. 附录
 - 输出: `02_<项目名>_详细设计文档.docx`
 - 模板文件本身不参与文档内容, 只贡献样式 / 字体 / 标题级别 / 页眉页脚等
+- **第 1 级 Heading (例如 "## 文档说明") 文本里不要手写 "一." "1." 等编号** — 由模板的 Heading 样式自动渲染, 手写会产生双重编号.
 
-### Step 1.5 - ⚠️ 禁用模板自动编号 (关键, 不做会双重编号)
+### Step 1.5 - ⚠️ 标题双重编号: 强制调 fix_docx_headings.py (v0.5.1 强约束)
 
 **问题**: 公司详细设计模板的 `styles.xml` 通常把 Heading 1/2/3 样式绑到 `numbering.xml` 的某个 `numId` (本仓库随附的模板就是 numId=5), Word 打开后会**自动**给段落加上 "1." "1.1" "1.1.1" 前缀.
 
-**症状**: 生成的 .docx 打开看到 "1\t一、文档说明  1.1\t1.1 内容概要" 这种**双重编号**.
+**症状**: 生成的 .docx 打开看到 "1	文档说明  1.1	1.1 内容概要" 这种**双重编号**.
 
 **根因**:
 - 模板的 styles.xml 里: `<w:style w:type="paragraph" w:styleId="Heading1"><w:pPr><w:numPr><w:numId w:val="5"/><w:ilvl w:val="0"/></w:numPr></w:pPr>...</w:style>`
 - python-docx `doc.add_paragraph(text, style="Heading 1")` 只是引用样式, 不复制样式属性, 所以段落会继承自动编号
-- 我们又手动写了 "一、" "1.1" 文字, 结果 Word 渲染时 "1" + "一、文档说明" = "1  一、文档说明"
+- 我们又手动写了 "一、" "1.1" 文字, 结果 Word 渲染时 "1" + "文档说明" = "1  文档说明" → 两套编号堆叠
 
-**修复** (生成脚本必须包含):
+**修复 (强制, 不走捷径)**: docx skill 生成 .docx **之后**, **必须**调用 skill 内置脚本 `scripts/fix_docx_headings.py`:
 
-```python
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
-
-def disable_auto_number(paragraph):
-    """在该段落上覆盖 numId=0, 禁用 Word 自动编号"""
-    pPr = paragraph._p.get_or_add_pPr()
-    for old in pPr.findall(qn("w:numPr")):
-        pPr.remove(old)
-    numPr = OxmlElement("w:numPr")
-    ilvl = OxmlElement("w:ilvl"); ilvl.set(qn("w:val"), "0")
-    numId = OxmlElement("w:numId"); numId.set(qn("w:val"), "0")  # 0 = 不编号
-    numPr.append(ilvl); numPr.append(numId)
-    pPr.append(numPr)
-
-# 在每个 Heading 1/2/3 段落 add 后立即调用
-for p in doc.paragraphs:
-    if p.style and p.style.name in ("Heading 1","Heading 2","Heading 3"):
-        disable_auto_number(p)
+```bash
+# (假设当前目录在工作空间根, 或者传绝对路径)
+python skills/software-factory/scripts/fix_docx_headings.py \
+  <项目名>工作空间/02_<项目名>_详细设计文档.docx
 ```
 
-**验收**: 生成的 .docx 重新打开, Heading 段落前不再有 "1." / "1.1" 自动编号, 只有我们写的 "一、" / "1.1" 文字.
+**该脚本会**:
 
-### Step 2.0 - 🆕 架构图自动生成 (v0.5.0 起强制)
+1. 遍历 .docx 所有段落, 找出 Heading 1/2/3 段落
+2. 强制把段落 pPr 的 numId 覆写为 0 (禁用 Word 自动编号)
+3. 防御性清理文本里残留的 "1. " / "1.1 " / "1\t" / "1.1\t" 阿拉伯前缀
+4. in-place 保存
+5. 打印修改前后的标题数 / numPr 重置数 / 文本清理数
+
+**验收**: 重新打开修复后的 .docx, Heading 段落前不再有 "1." / "1.1" 自动编号, 也无残留手写编号; 只剩模板的字体 / 字号 / 缩进等样式.
+
+**不允许**:
+
+- ❌ 不调 `fix_docx_headings.py` 直接交付 .docx
+- ❌ 试图手工逐段调用 `disable_auto_number(p)` (容易漏掉段落, 不可靠)
+- ❌ 删模板里 numbering.xml 的 numId (会破坏模板多级编号, 后续复用该模板的项目都会断)
+- ❌ 在 9 节骨架文本里手写 "一. " / "1.1 " (即使用了 fix_docx_headings.py 也可能因 OCR 等环节失效)
+
+### Step 2.0 - 🆕 架构图自动生成 (v0.5.0 起强制, v0.5.1 强化业务模块)
 
 > 这一步必须在写 `03_<项目名>_架构设计.md` **之前** 先做, 因为 PNG 是 Stage 2 (详细设计) 的"2. 总体设计"插图来源.
 
-**0. 调用 render_arch.py** (skill 内置脚本):
+**0. 准备业务模块列表**: 从需求规格说明书里抽出业务模块 (例: 首页 / 节点管理 / 用户管理), 不要用技术分层.
+
+**1. 调用 render_arch.py** (skill 内置脚本):
 
 ```bash
-# 方式 A: 先粗列层, 用 --layers 传 JSON 出占位 PNG
+# 方式 A: 业务模块列表, 用 --layers 传 JSON 出占位 PNG
 python skills/software-factory/scripts/render_arch.py \
-  --layers '[["接入层","Nginx / SLB"],["应用层","Spring Boot 3.x + Vue 3"],["服务层","工作台 / 节点管理 / 应用管理"],["数据层","MySQL 8.0"],["基础设施","Docker / 监控"]]' \
+  --layers '[["首页","概览仪表盘 + 关键指标"],["节点管理","节点注册 / 健康检查"],["用户管理","用户增删改查 / 角色权限"],["数据访问","JPA / Repository (DB 落地)"],["基础设施","Docker / 监控 (非业务模块, 备注用)"]]' \
   --out <项目名>工作空间/03_<项目名>_架构图.png \
   --title "<项目名> 系统架构图"
 ```
 
-**1. 然后写** `03_<项目名>_架构设计.md`, 至少含:
+**2. 然后写** `03_<项目名>_架构设计.md`, 至少含:
 
 ```markdown
 # 03_<项目名>_架构设计
 
-## 分层架构 (用于 render_arch.py 解析)
+## 分层架构 (用于 render_arch.py 解析) — ⚠️ 此处填"业务模块", 不是 SpringBoot 技术分层
 
 | 层 | 主要组件 |
 |----|----------|
-| 接入层 | Nginx / SLB |
-| 应用层 | Spring Boot 3.x / Vue 3 |
-| 服务层 | 工作台 / 节点管理 / 应用管理 |
-| 数据层 | MySQL 8.0 / Redis |
-| 基础设施 | Docker / 监控 |
+| 首页 | 概览仪表盘 + 关键指标 |
+| 节点管理 | 节点注册 / 健康检查 |
+| 用户管理 | 用户增删改查 / 角色权限 |
+| 数据访问 | JPA / Repository (基础设施) |
 ```
 
-(可用表格或 `## 层名` + 子项两种格式, render_arch.py 都认)
-
-**2. 调 render_arch.py 用 .md 重新出最终图** (覆盖占位 PNG):
+**3. 调 render_arch.py 用 .md 重新出最终图** (覆盖占位 PNG):
 
 ```bash
 python skills/software-factory/scripts/render_arch.py \
@@ -142,17 +143,45 @@ python skills/software-factory/scripts/render_arch.py \
   --title "<项目名> 系统架构图"
 ```
 
-**3. verify**: PNG 文件存在, size > 50KB. 不达标则:
+**4. verify**: PNG 文件存在, size > 50KB. 不达标则:
 
 - 调 `python scripts/render_arch.py --check` 看 matplotlib/字体是否就绪
-- 失败回退: 在 `03_<项目名>_架构设计.md` 里写一段 ASCII 分层图 (作为 fallback)
+- 失败回退: 在 `03_<项目名>_架构设计.md` 里写一段 ASCII 业务模块图 (作为 fallback)
 
-**4. 嵌入详细设计**: Step 1 生成 `02_<项目名>_详细设计文档.docx` 时, 在 "2. 总体设计" 或 "3. 模块设计" 段插入这张 PNG (`docx skill` 嵌入图片能力).
+**5. 嵌入详细设计**: Step 1 生成 `02_<项目名>_详细设计文档.docx` 时, 在 "2. 总体设计" 的 "2.1 架构图" 段插入这张 PNG (`docx skill` 嵌入图片能力).
 
-### Step 2 - 架构设计 (Markdown)
+### Step 2 - 架构设计 (Markdown, v0.5.1 强化业务模块)
 
-- 业务模块划分 (按业务, 不按 SpringBoot 技术分层)
-  - 例: 首页 / 节点管理 / 用户管理, 不是 controller/service/dao
+**业务模块划分 (强约束, 禁止 SpringBoot 技术分层)**:
+
+- ✅ **正确**: 按业务模块划分, 每个模块写清"问题描述 / 职责 / 入口 / 依赖"
+  - 例: 首页 / 节点管理 / 用户管理 / 工单管理
+- ❌ **错误**: 按 SpringBoot 技术分层罗列
+  - 反例: controller / service / dao / repository / 表现层 / 业务层 / 持久层
+  - 反例: 接入层 / 应用层 / 服务层 / 领域层 / 数据层 / 基础设施层
+  - 反例: API 网关层 / 路由层 / 中间件层
+
+**强制表格**:
+
+```markdown
+| 业务模块 | 问题描述 | 职责 | 入口 (URL/API) | 依赖 |
+|----------|----------|------|----------------|------|
+| 首页 | "用户登录后看到什么" | 概览 / 关键指标 / 快捷入口 | GET /api/dashboard | 节点服务 / 用户服务 |
+| 节点管理 | "如何注册和监控节点" | 节点注册 / 健康检查 / 上下线 | POST /api/nodes | 数据访问 |
+```
+
+- 每个业务模块单独一行, "问题描述" 用一句话讲清"这模块解决什么业务问题"
+- 即使是 demo 项目, 也必须至少列 2 个业务模块 (例: 首页 + 后台管理)
+- 找不到业务模块说明分析不到位, 回去补 Phase 1 需求规格
+
+**模块关系图 (业务模块架构图)**:
+
+- 在 `03_<项目名>_架构设计.md` 的 "## 架构总览 (业务模块视图)" 段画 ASCII 或 mermaid
+- 在 `03_<项目名>_架构图.png` 里画 PNG (按业务模块)
+- 关系箭头 = 调用方向 / 数据流向, 不是部署拓扑
+
+**其他 (保留旧版)**:
+
 - 时序图 (mermaid / ascii, 复杂流程用 mermaid)
 - 技术栈表 + 端口 / 路径约定
 - API 列表 (在 Step 1 的 .docx "4. 接口设计" 里展开)
@@ -169,14 +198,19 @@ python skills/software-factory/scripts/render_arch.py \
 - 不阅读 .docx 模板就直接生成 (会失去样式基线)
 - 把模板文件复制进 `<项目名>工作空间/` (污染产物目录)
 - 把模板文件提交到 skill 仓库 (.gitignore 已排除)
-- 生成 Heading 段落后**忘记调 disable_auto_number** (双重编号 bug)
+- ❌ 生成 Heading 段落不调 `scripts/fix_docx_headings.py` (双重编号 bug)
+- ❌ 在 9 节骨架文本里手写 "一、" "1.1" (双重编号 bug)
 - 不写 SQL DDL 而只写 Markdown (后续 Stage 找不到入口)
 - 🆕 **用临时脚本 (matplotlib / mermaid) 画架构图** — 必须用 skill 内置的 `scripts/render_arch.py`
 - 🆕 跳 Step 2.0 直接出 .md — PNG 没生成, Stage 2 插图就缺
 - 🆕 把架构图写成 ASCII 凑数 — 除非 render_arch.py 工具链缺失 (在 --check 失败时才允许)
+- ❌ **v0.5.1**: 把架构图画成 SpringBoot 技术分层 (接入层 / 应用层 / 服务层 / 数据层 / 基础设施层)
+- ❌ **v0.5.1**: 模块划分按 controller / service / dao 罗列
+- ❌ **v0.5.1**: 业务模块没写"问题描述" (只写职责)
 
 ## 工具调用约定
 
 - docx skill: 调 `skills/docx/SKILL.md` 实现 .docx 生成
 - 模板读取: `python-docx` 或 Node `docx` 库均可
 - 🆕 架构图: 必须 `python skills/software-factory/scripts/render_arch.py`, 不要再手画
+- 🆕 标题修复: 必须 `python skills/software-factory/scripts/fix_docx_headings.py <docx>`, 不要再手写 disable_auto_number

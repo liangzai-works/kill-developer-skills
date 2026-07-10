@@ -15,10 +15,14 @@ render_arch.py - 架构图自动生成 (software-factory 内置能力)
 
 用法:
   python render_arch.py --src 03_架构设计.md --out 03_架构图.png
-  python render_arch.py --layers '[["接入层","Nginx"],["应用层","Spring Boot"]]'
+  python render_arch.py --layers '[["业务模块A","首页"],["业务模块B","节点管理"]]'
   python render_arch.py --check
 
 退出码: 0=成功, 1=输入错误, 2=渲染失败
+
+设计约束 (v0.5.1):
+  - 业务模块强制: 默认示例改为业务模块维度, 严禁 SpringBoot 技术分层示例
+  - agent 应从需求规格里抽取业务模块列表后传入
 """
 import argparse
 import json
@@ -39,6 +43,15 @@ LAYER_COLORS = [
 TEXT_COLOR = "#1A237E"
 EDGE_COLOR = "#1976D2"
 TITLE_COLOR = "#0D47A1"
+
+# v0.5.1: 默认示例改为业务模块维度. 严禁 SpringBoot 技术分层作为示例.
+# 见 prompts/architecture.md 业务模块强约束.
+DEFAULT_EXAMPLE_LAYERS = [
+    ["业务模块A", "示例: 首页 / 概览仪表盘 / 关键指标"],
+    ["业务模块B", "示例: 节点管理 / 核心 CRUD + 状态机"],
+    ["业务模块C", "示例: 用户管理 / 登录鉴权 + 角色"],
+    ["数据访问", "基础设施: Repository / DB 落地 (非业务模块, 仅占位)"],
+]
 
 
 def pick_font() -> str:
@@ -70,7 +83,15 @@ def parse_layers_from_md(md_path: Path) -> list:
     if table_rows:
         for row in table_rows:
             name, comp = row
-            if name.lower() in ("层", "层级", "layer", "level") or name.startswith("---"):
+            # 跳过表头 (层 / 层级 / layer / level 等关键词) 与分隔行
+            if name.lower() in ("层", "层级", "layer", "level"):
+                continue
+            if name.startswith("---") or comp.startswith("---"):
+                continue
+            # 跳过 markdown 表头说明中的 "业务模块" / "主要组件"
+            if name.strip() in ("业务模块", "模块", "模块名", "名称"):
+                continue
+            if comp.strip() in ("主要组件", "组件", "职责", "问题描述"):
                 continue
             layers.append([name.strip(), comp.strip()])
         if layers:
@@ -84,14 +105,14 @@ def parse_layers_from_md(md_path: Path) -> list:
             if current_layer:
                 layers.append([current_layer, ", ".join(current_comps) if current_comps else "-"])
             current_layer = m_head.group(1).strip()
-            current_layer = re.sub(r"^\d+[\.\u3001\)]\\s*", "", current_layer)
+            current_layer = re.sub(r"^\d+[\.\u3001\)\.]\s*", "", current_layer)
             current_comps = []
         else:
-            m_li = re.match(r"^\\s*[-*]\\s+(.+)$", line)
+            m_li = re.match(r"^\s*[-*]\s+(.+)$", line)
             if m_li and current_layer:
                 comp = m_li.group(1).strip()
-                comp = re.sub(r"\\*\\*(.+?)\\*\\*", r"\\1", comp)
-                comp = re.sub(r"`(.+?)`", r"\\1", comp)
+                comp = re.sub(r"\*\*(.+?)\*\*", r"\1", comp)
+                comp = re.sub(r"`(.+?)`", r"\1", comp)
                 current_comps.append(comp)
     if current_layer:
         layers.append([current_layer, ", ".join(current_comps) if current_comps else "-"])
@@ -164,8 +185,8 @@ def render(layers: list, out_path: Path, title: str = "系统架构图") -> int:
 def main():
     ap = argparse.ArgumentParser(description="架构图自动生成 (software-factory 内置能力)")
     ap.add_argument("--src", help="架构描述文件 (.md / .yaml / .json)")
-    ap.add_argument("--layers", help="JSON: '[[\"接入层\",\"Nginx\"],...]'")
-    ap.add_argument("--out", default="02_架构图.png")
+    ap.add_argument("--layers", help="JSON: '[[\"业务模块A\",\"...\"],...]'")
+    ap.add_argument("--out", default="03_架构图.png")
     ap.add_argument("--title", default="系统架构图")
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
@@ -202,14 +223,10 @@ def main():
         except json.JSONDecodeError as e:
             print(f"[FAIL] JSON 解析失败: {e}"); sys.exit(1)
     else:
-        layers = [
-            ["接入层", "Nginx / SLB / CDN"],
-            ["应用层", "Spring Boot / Vue 3"],
-            ["服务层", "工作台 / 节点管理 / 应用管理"],
-            ["数据层", "MySQL / Redis / ES"],
-            ["基础设施", "K8s / Docker / 监控"],
-        ]
-        print("[INFO] 未指定输入, 用默认 5 层示例")
+        # v0.5.1: 默认示例改为业务模块维度 (而非技术分层)
+        layers = DEFAULT_EXAMPLE_LAYERS
+        print(f"[INFO] 未指定输入, 用默认 {len(layers)} 个业务模块示例")
+        print("[INFO] ⚠️  这是占位示例, 请从需求规格里抽取真实业务模块后用 --src 或 --layers 重画")
 
     if not layers:
         print("[FAIL] 未解析到任何层"); sys.exit(1)

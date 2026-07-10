@@ -1,16 +1,18 @@
 # workflow.yaml
-# software-factory Meta Skill 工作流定义 (v0.5.0)
-# Schema: v1.2
+# software-factory Meta Skill 工作流定义 (v0.5.1)
+# Schema: v1.3
 # 约定: 所有产物落在单一工作空间目录, 文件名 NN_<项目名>_<文档名>.<ext>
-# 详细设计文档按 3 级优先级 + fallback 读 .docx 模板
-# 架构设计阶段 (Stage 3) 必须调 scripts/render_arch.py 生成架构图 PNG
+# 详细设计文档按 4 级优先级 + fallback 读 .docx 模板
+# 架构设计阶段 (Stage 3) 必须调 scripts/render_arch.py 生成架构图 PNG (按业务模块)
+# 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
+# v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.5.0
+version: v0.5.1
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
-  详细设计文档按优先级读 `详细设计模板.docx` 作为样式基线。
-  架构图自动生成 (scripts/render_arch.py) 是 Stage 3 的内置步骤.
+  详细设计文档按优先级读 `详细设计模板.docx` 作为样式基线, 生成后必须调 `scripts/fix_docx_headings.py` 后处理。
+  架构图自动生成 (scripts/render_arch.py) 是 Stage 3 的内置步骤, 强制按业务模块绘制.
 # -------------------------------------------------------------------
 # 工作空间根 - 旧版 (requirements/ design/ development/ testing/)
 # 已废弃: 全部按 workspace_dir 单目录模式
@@ -19,10 +21,8 @@ workspace:
   root_pattern: "<项目名>工作空间/"     # 缺省按 "<项目名>工作空间/" 建
   file_naming: "NN_<项目名>_<文档名>.<ext>"
   nn_padding: 2                         # 01 / 02 / ...
-  # 注意: 这是**生成产物目录**, 不放模板资源!
 
 detail_template:
-  # 模板查找优先级 (从上往下, 命中即用, 都未命中走 fallback)
   lookup_priority:
     - id: explicit_arg
       location: "$user_arg.template"
@@ -36,7 +36,6 @@ detail_template:
     - id: fallback
       location: "(docx skill default)"
       description: "调 docx skill 用其默认模板生成"
-  # 模板本身是用户私有资产, 不入 git, 不复制进项目工作空间
   gitignore: "skills/**/templates/详细设计模板.docx"
   missing_action: ask_user   # ask_user | use_fallback
   message_when_missing: |
@@ -46,15 +45,49 @@ detail_template:
       3. skills/software-factory/templates/详细设计模板.docx
     请提供绝对路径, 或留空用 docx skill 默认模板.
 
-architecture_diagram:
-  # v0.5.0 新增: 架构图自动生成能力
+# v0.5.1: 标题双重编号后处理 (强制)
+heading_fix:
   enabled: true
+  required: true                                  # 不可跳过, docx skill 完成后必须执行
+  script: "scripts/fix_docx_headings.py"
+  input: "02_<项目名>_详细设计文档.docx"           # Stage 2 产出
+  in_place: true
+  exit_code_pass: 0
+  forbidden_alternatives:                         # 不允许的替代方案
+    - "doc.add_paragraph(text, style='Heading 1') 后手工调 disable_auto_number(p)"
+    - "修改模板 numbering.xml (会污染模板)"
+    - "在 9 节骨架文本里手写 一./1.1 编号"
+
+# v0.5.0: 架构图自动生成
+architecture_diagram:
+  enabled: true
+  required: true
   script: "scripts/render_arch.py"
   output: "03_<项目名>_架构图.png"
   embedding_target: "02_<项目名>_详细设计文档.docx"
-  input_source: "03_<项目名>_架构设计.md"   # Stage 3 产出作为输入
-  when: "always"                             # always | optional
-  fallback_on_missing_tooling: "ascii"       # matplotlib 不在时回退 ASCII
+  input_source: "03_<项目名>_架构设计.md"          # Stage 3 产出作为输入
+  when: "always"                                  # always | optional
+  fallback_on_missing_tooling: "ascii"            # matplotlib 不在时回退 ASCII
+  # v0.5.1: 业务模块维度强制
+  layer_naming_policy:
+    enforce: "business_modules"
+    forbidden_examples:                           # 这些命名禁止作为主层
+      - "接入层"
+      - "应用层"
+      - "服务层"
+      - "数据层"
+      - "基础设施层"
+      - "持久层"
+      - "表现层"
+      - "Controller"
+      - "Service"
+      - "Repository"
+    required_columns_in_arch_md:                  # 03_<项目>_架构设计.md 必须含
+      - "业务模块"
+      - "问题描述"
+      - "职责"
+      - "入口"
+      - "依赖"
   font_fallback:
     - "SimHei"
     - "Microsoft YaHei"
@@ -90,6 +123,12 @@ phases:
         output: [phase0-template-setup.log]
         gating: "always"
         on_missing: detail_template.missing_action
+      - id: phase0.tools
+        name: 校验内置脚本工具 (v0.5.1 新增)
+        commands:
+          - "python scripts/render_arch.py --check"
+          - "python scripts/fix_docx_headings.py --help"
+        on_failure: warn_continue                  # 工具缺失可继续但记录警告
 
   - id: phase1
     name: 需求评估
@@ -99,12 +138,17 @@ phases:
       - id: phase1.detect_mode
         name: 识别 Idea / Spec 模式
         input: [user_input.text]
-        output: [01_<项目名>_需求假设清单.md]   # 补齐全/缺/待确认
+        output: [01_<项目名>_需求假设清单.md]
         on_failure: default_to_idea
       - id: phase1.spec
         name: 需求规格说明书
         input: [user_input.text, 01_<项目名>_需求假设清单.md]
         output: [01_<项目名>_需求规格说明书.md]
+        required_sections:                          # v0.5.1: 业务模块清单是 Phase 1 强制输出
+          - "业务模块清单"
+          - "用户角色"
+          - "功能范围"
+          - "非功能需求"
         on_failure: "retry(1) then ask_user"
 
   - id: phase2
@@ -116,6 +160,10 @@ phases:
         name: 需求规格 (产物)
         input: [01_<项目名>_需求规格说明书.md]
         output: [01_<项目名>_需求规格说明书.md]
+        # v0.5.1: 检验"业务模块清单"字段是否非空
+        validation:
+          - "assert 业务模块清单 in spec.md"
+          - "assert len(业务模块清单) >= 2"
         on_failure: non_blocking_warning
 
       - id: stage2.detail_design
@@ -124,26 +172,38 @@ phases:
           - 01_<项目名>_需求规格说明书.md
           - 03_<项目名>_架构设计.md
           - 03_<项目名>_架构图.png
-          - detail_template.lookup_priority     # 命中位置决定样式基线
+          - detail_template.lookup_priority
         output: [02_<项目名>_详细设计文档.docx]
         uses_skill: docx
         on_missing_template: detail_template.missing_action
         on_failure: "retry(1) then ask_user"
-        notes: |
-          1) 模板存在时复用 styles.xml / numbering.xml / theme1.xml
-          2) 嵌入 03_<项目名>_架构图.png 到"2. 总体设计"或"3. 模块设计"段
-          3) 走 Step 1.5 disable_auto_number 把 Heading numId=0 (避免双重编号)
+        steps:
+          - "按 detail_template.lookup_priority 找模板 (4 级 + fallback)"
+          - "调 docx skill 用模板样式基线生成 02_<项目名>_详细设计文档.docx"
+          - "嵌入 03_<项目名>_架构图.png 到 \"2. 总体设计\" 段"
+          - "走 heading_fix 步骤调 scripts/fix_docx_headings.py 后处理"
+        post_steps:
+          - id: heading_fix
+            name: 调 scripts/fix_docx_headings.py 修复 Heading 双重编号 (v0.5.1 强制)
+            command: "python skills/software-factory/scripts/fix_docx_headings.py <workspace_dir>/02_<项目名>_详细设计文档.docx"
+            expected: "exit_code == 0, 标题统计数 >= 9"
+            on_failure: "stop_workflow"             # 不允许交付未修复的 .docx
 
       - id: stage3.architecture
-        name: 架构设计 (含架构图自动生成)
+        name: 架构设计 (含架构图自动生成, v0.5.1 强制业务模块)
         input: [01_<项目名>_需求规格说明书.md]
         output:
           - 03_<项目名>_架构设计.md
-          - 03_<项目名>_架构图.png             # 由 architecture_diagram.script 生成
+          - 03_<项目名>_架构图.png
         steps:
-          - "写 03_<项目名>_架构设计.md (模块划分 + 技术栈 + API + 部署)"
+          - "从需求规格抽取业务模块列表 (Phase 1 里的 \"业务模块清单\")"
+          - "写 03_<项目名>_架构设计.md (业务模块表格 + 技术栈 + API + 部署)"
           - "调 python scripts/render_arch.py --src 03_<项目名>_架构设计.md --out 03_<项目名>_架构图.png --title '<项目名> 系统架构图'"
           - "verify: PNG 文件存在, size > 50KB"
+        validation:
+          - "assert 业务模块 in 03_<项目>_架构设计.md"               # v0.5.1 强制
+          - "assert 问题描述 column exists"                          # v0.5.1 强制
+          - "assert not (接入层 + 应用层 + 服务层 + 数据层 + 基础设施层) in arch_diagram_layers"  # v0.5.1 反例校验
         on_failure: "retry(1) then ask_user"
 
       - id: stage4.db_design
@@ -200,6 +260,7 @@ termination:
   success_when: "all_required_stages.status == completed"
   blocked_when: |
     连续 3 次同类失败且用户选择不接管.
+
 controls:
   pause:
     command: "$software-factory pause"
@@ -219,6 +280,21 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.5.1:
+      title: "Heading 双重编号一刀切 + 业务模块强约束"
+      changes:
+        - "新增 scripts/fix_docx_headings.py 后处理脚本 (Heading pPr numId=0 + 残留编号清理), 强制在 Stage 2 docx skill 后调用"
+        - "templates/02_详细设计文档_九节骨架.md 去掉手写 '一./1.1' 编号, 改为纯文字, 由模板自动渲染"
+        - "templates/03_架构设计.md 全文重写, 加入业务模块维度骨架 + 反例清单"
+        - "prompts/architecture.md Step 1.5 改强约束 (调脚本而非手工 disable_auto_number)"
+        - "prompts/architecture.md Step 2 加业务模块强约束 + 反例清单"
+        - "scripts/render_arch.py 默认 fallback 改为业务模块示例 (非技术分层)"
+        - "SKILL.md 搂5.2 重写为 \"强制调 fix_docx_headings.py\"; 搂5.3 加业务模块维度强制"
+        - "workflow.yaml 新增 heading_fix 步骤 + architecture_diagram.layer_naming_policy"
+        - "Phase 1 spec 要求 \"业务模块清单\" >= 2 项"
+      feedback_history:
+        - "v0.3.0 用户反馈: \"模块划分怎么是 SpringBoot 的结构分层? 不应该是实际的业务模块吗\""
+        - "v0.4.0 用户反馈: \"根据 word 模板生成的新文件的 head 节点前面多了数字 (1 1 文档说明 / 1.1 1.1 内容概要)\""
   - v0.5.0:
       - 新增架构图自动生成: scripts/render_arch.py (matplotlib 后端, 中文 fallback, 三种输入格式)
       - SKILL.md 搂5.3 文档化架构图生成规则
