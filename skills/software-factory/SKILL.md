@@ -2,7 +2,7 @@
 name: software-factory
 description: |
   元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.5.1
+version: 0.5.2
 type: meta
 ---
 
@@ -23,6 +23,7 @@ type: meta
 - 不在 Heading 文本里手写 "一、" / "1.1" (会导致双重编号)
 - 不把架构图按 SpringBoot 技术分层绘制 (接入层 / 应用层 / 服务层 / 数据层 / 基础设施层 等禁止作为主层)
 - 不把"模块划分"按 controller / service / dao / repository 罗列 (必须是业务模块维度)
+- 不跳过 Codex 右侧 in-app browser 面板 (v0.5.2 起, 浏览器验收默认要打开这个面板)
 
 ## 3. 输入
 
@@ -195,10 +196,10 @@ python scripts/render_arch.py --check
 | 5 | UI 设计 | 前端型必需? | 04b_<项目名>_UI设计.md + 源代码/<项目名>-web/prototype.html |
 | 6 | 实现 | ✓ | 源代码/<项目名>-server/ 与源代码/<项目名>-web/ |
 | 7 | 构建运行 | ✓ | runtime.log + health-check.json |
-| 8 | 浏览器验收 | ✓ (前端型) | 06_<项目名>_验收报告.md + screenshots/*.png |
+| 8 | 浏览器验收 | ✓ (前端型) | 06_<项目名>_验收报告.md + screenshots/*.png (v0.5.2 强制开右侧 in-app browser 面板) |
 | 9 | 测试评审 | ✓ | 05_<项目名>_测试报告.md + 08_<项目名>_代码评审报告.md |
 
-> 前端型项目永远不跳 Stage 8 - 即使 hello world, 也要塞浏览器验收报告与截图.
+> 前端型项目永远不跳 Stage 8 - 即使 hello world, 也要塞浏览器验收报告与截图。`n> **v0.5.2 起**: Stage 8 还必须打开 Codex 右侧 in-app browser 面板, 用户实时看到测试过程 (见搂6 / workflow.yaml Stage 8 / prompts/review.md).
 
 ## 7. 强制 UI Artifact 规则 (v0.3.0 继承)
 
@@ -222,9 +223,28 @@ $software-factory --template=D:/company/详细设计模板.docx
 $software-factory --rerun=stage2
 ```
 
-## 10. v0.5.1 变更日志
 
-### v0.5.1 (本次升级, 标题去重 + 业务模块强约束)
+## 10. v0.5.2 变更日志
+
+### v0.5.2 — Stage 8 强制打开右侧 in-app browser 面板 (本次升级)
+
+**目标**: 用户跑 demo 时能实时在 Codex 对话框**右边**看到测试过程. 之前是 agent 自觉开, 现固化为 Stage 8 必选步骤.
+
+**改动**:
+
+- `workflow.yaml` Stage 8 新增 `browser.open_in_app_panel` 步骤, `required: true`, `on_failure: stop_workflow`.
+- Stage 8 含 4 个子步骤: `open_in_app_panel` (强制) → `interact` → `compose_report` → `optional_record` (ffmpeg 录屏, 默认关).
+- Stage 8 `forbidden_alternatives`: 不允许 `chromium.launch({ headless: true })` 纯 headless 跑完后只交 screenshots/.
+- `prompts/review.md` 阶段 2 整段重写, 把 in-app browser 调用规约写成具体代码 (browser-client 初始化 + `tab.goto` + `tab.locator.click`).
+- `SKILL.md` 搂2 加新约束, 搂6 Stage 8 表格加 v0.5.2 标记, 搂10 顶部加本条 changelog.
+
+**反馈来源**: 用户上一轮"之前 codex 测试时有打开过的 就是对话框的右边" → 显式把"打开右侧 in-app browser 面板"做成 skill 强约束.
+
+**未做 (可选)**: ffmpeg 自动录屏默认关, 由用户 opt-in 启用 (录屏很占 CPU 且 ffmpeg 不一定装). 后续如需要, 加 `optional_record` 步骤 + `--user-opt-in-record` 启动参数.
+
+## 11. v0.5.1 变更日志
+
+### v0.5.1 (上一版, 标题去重 + 业务模块强约束)
 
 **新增 / 强化**:
 

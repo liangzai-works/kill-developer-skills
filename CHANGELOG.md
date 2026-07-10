@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## v0.5.2 — Stage 8 强制打开右侧 in-app browser 面板
+
+把"用户实时看到测试过程"从 agent 自觉做成 skill 强约束.
+
+### 改动
+- `workflow.yaml` Stage 8: 新增 `browser.open_in_app_panel` 步骤, `required: true`, `on_failure: stop_workflow`
+- Stage 8 含 4 个子步骤: open_in_app_panel (强制) → interact → compose_report → optional_record (ffmpeg 录屏, 默认关)
+- Stage 8 `forbidden_alternatives`: 禁止 `chromium.launch({ headless: true })` 纯 headless 跑完后只交 screenshots/
+- `prompts/review.md` 阶段 2 整段重写, in-app browser 调用规约写成具体代码 (browser-client 初始化 + tab.goto + tab.locator.click)
+- `SKILL.md` 搂2 加新约束 / 搂6 Stage 8 表格加 v0.5.2 标记 / 搂10 顶部加本条 changelog
+
+### 反馈来源
+用户在上一轮反馈: "之前 codex 测试时有打开过的 就是对话框的右边" → 显式把"打开右侧 in-app browser 面板"做成 skill 强约束.
+
+### 行为变化
+- 跑前端型 demo 时, Stage 8 必须打开 Codex 对话框**右边**的 in-app browser 面板
+- 用户能实时看到 navigate / click / fill / 截图等动作 (不再事后看 screenshots)
+- ffmpeg 自动录屏默认关, 用户明确说"录下来"才走 (录屏很占 CPU)
+
+### 兼容
+v0.5.1 已装 skill 可选择 reinstall (Stage 8 改了). 历史验收报告不变, 只是新生成的会多 in-app browser 标注.
+
+### 文件清单
+| 文件 | 变化 |
+|------|------|
+| `skills/software-factory/workflow.yaml` | version v0.5.1 → v0.5.2; Stage 8 重写 |
+| `skills/software-factory/prompts/review.md` | 阶段 2 整段重写 |
+| `skills/software-factory/SKILL.md` | version 0.5.1 → 0.5.2; 搂2/搂6/搂10 改动 |
+| `CHANGELOG.md` | 顶部加 v0.5.2 |
+
+---
 ## v0.5.1 — Heading 双重编号一刀切 + 业务模块强约束
 
 修复了两条用户长期反馈的硬骨头:

@@ -7,12 +7,13 @@
 # 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
 # v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.5.1
+version: v0.5.2
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
   详细设计文档按优先级读 `详细设计模板.docx` 作为样式基线, 生成后必须调 `scripts/fix_docx_headings.py` 后处理。
   架构图自动生成 (scripts/render_arch.py) 是 Stage 3 的内置步骤, 强制按业务模块绘制.
+  Stage 8 浏览器验收强制打开 Codex 右侧 in-app browser 面板, 不允许纯 headless 跑.
 # -------------------------------------------------------------------
 # 工作空间根 - 旧版 (requirements/ design/ development/ testing/)
 # 已废弃: 全部按 workspace_dir 单目录模式
@@ -240,13 +241,53 @@ phases:
         on_failure: "retry(2) then ask_user"
 
       - id: stage8.browser_validation
-        name: 浏览器验收 (前端必需)
+        name: 浏览器验收 (前端必需, v0.5.2 强制打开右侧 in-app browser 面板)
         input: [源代码/<项目名>-server/health-check.json, 04b_<项目名>_UI设计.md]
         output:
           - 06_<项目名>_验收报告.md
           - screenshots/<NN>-<语义>.png
         gating: "has_frontend == true"
-        on_failure: non_blocking_warning
+        required: true
+        steps:
+          - id: browser.open_in_app_panel
+            name: 打开 Codex 右侧 in-app browser 面板 (强制)
+            description: |
+              通过 `$browser control-in-app-browser` skill 把"对话框右侧"的 in-app browser 面板打开,
+              并 navigate 到 service 健康地址. 让用户能实时看到测试过程.
+              不允许用纯 headless playwright 跑完后只交 screenshots/.
+            setup:
+              - "初始化 browser-client: `await import('<plugin>/scripts/browser-client.mjs').then(m => m.setupBrowserRuntime({globals}))`"
+              - "选中 in-app browser: `await agent.browsers.get('iab')`"
+            actions:
+              - "`await browser.navigate({url: 'http://localhost:<port>/'})`"
+              - "`await tab.screenshot({path: '<workspace>/screenshots/08-01-home-opened.png'})`"
+            on_failure: stop_workflow
+            forbidden_alternatives:
+              - "chromium.launch({ headless: true }) 纯 headless 跑"
+              - "用其他浏览器技能绕过 in-app browser"
+
+          - id: browser.interact
+            name: 用 playwright-style API 点按 / 输入 / 截图
+            actions:
+              - "对核心业务场景执行 1-3 个用户操作 (例: 填表 → 点击 → 列表查询)"
+              - "每个关键交互后截图存 screenshots/<NN>-<语义>.png"
+              - "记录每步操作到 06_<项目名>_验收报告.md"
+
+          - id: browser.compose_report
+            name: 写验收报告 + 收尾
+            output_artifact: 06_<项目名>_验收报告.md
+            required_sections:
+              - "测试时间 / 测试人 (Codex in-app browser)"
+              - "测试地址 (URL + 端口)"
+              - "可执行场景清单 (按 04b_UI设计.md 走)"
+              - "交互结果 (每步 PASS/FAIL + 截图引用)"
+              - "已知问题 / 建议"
+
+          - id: browser.optional_record
+            name: (可选) ffmpeg 桌面录屏, 落 mp4
+            when: "user_opt_in == true"  # 默认 false, 用户说要看录屏时才开
+            command: "ffmpeg -f gdigrab -framerate 15 -i desktop -t <duration> <workspace>/screenshots/08-recording.mp4 -y"
+            output: screenshots/<NN>-recording.mp4
 
       - id: stage9.test_and_review
         name: 测试 + 评审
@@ -280,6 +321,13 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.5.2:
+      title: "Stage 8 强制打开右侧 in-app browser 面板"
+      changes:
+        - "workflow.yaml Stage 8 新增 browser.open_in_app_panel 步骤, required: true, on_failure: stop_workflow"
+        - "Stage 8 forbidden_alternatives: 不允许用纯 headless chromium 跑完后只交 screenshots/"
+        - "Stage 8 新增 browser.optional_record (ffmpeg 桌面录屏, user_opt_in == true)"
+        - "后续: prompts/review.md / SKILL.md 搂6 同步落地, 文档化 v0.5.2"
   - v0.5.1:
       title: "Heading 双重编号一刀切 + 业务模块强约束"
       changes:
