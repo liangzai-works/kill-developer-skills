@@ -1,13 +1,13 @@
 # workflow.yaml
 # software-factory Meta Skill 工作流定义 (v0.5.1)
-# Schema: v1.3
+# Schema: v1.4
 # 约定: 所有产物落在单一工作空间目录, 文件名 NN_<项目名>_<文档名>.<ext>
 # 详细设计文档按 4 级优先级 + fallback 读 .docx 模板
 # 架构设计阶段 (Stage 3) 必须调 scripts/render_arch.py 生成架构图 PNG (按业务模块)
 # 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
 # v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.5.5
+version: v0.6.0
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
@@ -153,6 +153,22 @@ phases:
           - "非功能需求"
         on_failure: "retry(1) then ask_user"
 
+      - id: phase1.review
+        name: 多角色 PRD 自检评审 (SPACE-review-board, 别名 pm-review-board)
+        input: [01_<项目名>_需求规格说明书.md]
+        output: [01_<项目名>_需求评审记录.md]
+        uses_skill: SPACE-review-board  # skill frontmatter name; manifest 引用别名 pm-review-board
+        gating: "always"
+        on_failure: non_blocking_warning
+        steps:
+          - "把 01_<项目名>_需求规格说明书.md 作为输入, 触发 SPACE-review-board (别名 pm-review-board)"
+          - "逐角色过一遍 (产品 / 研发 / 测试 / 设计 / 运营 / 法务), 落到 01_<项目名>_需求评审记录.md"
+          - "判定为 ❌ 不通过 时, 把阻断项回写到 01_<项目名>_需求规格说明书.md 的'待澄清问题'小节, 然后 retry(1) phase1.spec"
+          - "判定为 ⚠️ 有条件通过 / ✅ 通过 时, 把评审记录作为附件继续进入 Phase 2"
+        validation:
+          - "assert 01_<项目名>_需求评审记录.md 存在"
+          - "assert 总体判定 in [✅ 通过, ⚠️ 有条件通过, ❌ 不通过]"
+
   - id: phase2
     name: 软件工厂流水线
     required: true
@@ -216,8 +232,9 @@ phases:
         on_failure: non_blocking_warning
 
       - id: stage5.ui_design
-        name: UI 设计 (前端型必需)
+        name: UI 设计 (前端型必需, 接入 frontend-design 设计哲学)
         input: [02_<项目名>_详细设计文档.docx]
+        uses_skill: frontend-design
         output:
           - 04b_<项目名>_UI设计.md
           - 源代码/<项目名>-web/prototype.html
@@ -226,8 +243,11 @@ phases:
         on_failure: non_blocking_warning
 
       - id: stage6.implementation
-        name: 实现
+        name: 实现 (web 子任务挂上 frontend-design 设计哲学)
         input: [02_<项目名>_详细设计文档.docx, 03_<项目名>_架构设计.md]
+        uses_skill_subtasks:
+          server: []
+          web: [frontend-design]
         output:
           - 源代码/<项目名>-server/
           - 源代码/<项目名>-web/

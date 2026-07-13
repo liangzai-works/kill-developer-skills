@@ -1,3 +1,40 @@
+
+## v0.6.0 — 需求阶段注入 pm-review-board, 设计阶段注入 frontend-design
+
+把多角色 PRD 评审前置到 Phase 1 末尾 (作为 PRD 自检门禁), 并在 UI 设计 / web 实现阶段挂上 frontend-design 设计哲学, 拒绝 AI 默认风格三件套.
+
+### 新增
+- **pm-review-board 注入点 (需求阶段)**:
+  - `skills/software-factory/skill-manifest.yaml` 注册 `pm-review-board` (仓库别名, 实际 frontmatter name 为 `SPACE-review-board`)
+  - `skills/software-factory/workflow.yaml` 新增 `phase1.review` 阶段, 位于 `phase1.spec` 之后 / Phase 2 之前, `uses_skill: SPACE-review-board`
+  - `skills/software-factory/prompts/requirement.md` 新增 step 6 "PRD 自检评审", 输出 `01_<项目名>_需求评审记录.md`
+  - `skills/software-factory/SKILL.md` 新增搂6.5.1 + 搂16 变更日志
+- **frontend-design 注入点 (设计阶段)**:
+  - `skills/software-factory/skill-manifest.yaml` 注册 `frontend-design` (本地已装, `source: bundled`)
+  - `skills/software-factory/workflow.yaml` 在 `stage5.ui_design` 加 `uses_skill: frontend-design`, 在 `stage6.implementation` 加 `uses_skill_subtasks.web: [frontend-design]`
+  - `skills/software-factory/prompts/coding.md` 前端约束区补"设计哲学 5 条" (调色 / 排版 / 节奏 / 风险 / 留白) + "别再忘记"补 AI 默认风格提醒
+  - `skills/software-factory/SKILL.md` 新增搂6.5.2
+
+### 改动
+- 同步 Spring Boot 锁到 4.1.0 (与 AGENTS.md 全局偏好一致):
+  - `prompts/coding.md` 三处: `constraints.backend` / 后端约束第一行 / 强制项里 `pom.xml` 行
+- `workflow.yaml` version `v0.5.5` → `v0.6.0`, Schema v1.3 → v1.4
+- `SKILL.md` frontmatter version `0.5.5` → `0.6.0`
+
+### 行为变化
+| 阶段 | v0.5.5 | v0.6.0 |
+|---|---|---|
+| Phase 1 / 需求 | 仅生成 spec.md | spec.md + 6 角色评审记录 (门禁: 不通过则回写 spec.md 重写) |
+| Stage 5 / UI 设计 | 通用 UI 模板 | frontend-design 设计哲学 (token + 节奏 + 签名元素) |
+| Stage 6 / web 实现 | 通用风格 | frontend-design 设计哲学 (同上) |
+| Java 项目 Spring Boot 版本 | 3.x (隐含) | 4.1.0 (AGENTS.md 锁) |
+
+### 兼容
+- v0.5.x 已生成的 `01_<项目名>_需求规格说明书.md` 在跑 v0.6.0 时会先做 phase1.review, 不通过的会被标记 "待澄清问题" 后回写到 spec.md. 不影响已通过的 PRD.
+- 旧 Java 项目若已锁定 Spring Boot 3.x, 在 `prompts/coding.md` 里改写为 4.1.0 后会覆写 pom 模板. 用户显式锁定版本时仍以 pom.xml 为准 (AGENTS.md).
+
+---
+
 ## v0.5.5 — fix_docx_headings.py 默认不剥手写编号 (二级标题修复)
 
 跑 v0.5.4 DEMO 后用户反馈: "详细设计的一级标题有了 但是二级标题还是没有". 排查发现 fix_docx_headings.py 默认会调 strip_leading_numbers(), 把 v0.5.3+ 故意写的 1.1 / 1.1.1 前缀也剥了. H1 不受影响是因为中文"一、"不在剥除正则里, H2/H3 直接被剥光.

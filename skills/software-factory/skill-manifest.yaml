@@ -26,6 +26,11 @@ workflows:
       - id: requirement-analysis
         purpose: 需求拆解 / Idea 模式补全
         install_hint: "$skill-installer requirement-analysis"
+      - id: pm-review-board
+        purpose: 多角色 PRD 自检评审（产品 / 研发 / 测试 / 设计 / 运营 / 法务 6 视角）
+        install_hint: "$skill-installer --repo hexi664/pm-review-board --path . --name pm-review-board"
+        invokes_at: phase1.review
+        notes: 仓库 hexi664/pm-review-board 内置 skill 名为 SPACE-review-board, 这里用仓库别名 pm-review-board 作为引用 ID; 实际触发名仍为 SPACE-review-board (来自 SKILL.md frontmatter)
       - id: documentation
         purpose: PRD / Design / Report 模板填充
       - id: product-design
@@ -34,6 +39,10 @@ workflows:
       - id: ui-design
         purpose: 设计系统、组件库、原型
         optional_when: [cli, backend-only]
+      - id: frontend-design
+        purpose: 前端视觉设计哲学（调色 / 排版 / 节奏），注入到 Stage 5 UI 设计与 Stage 6 web 源生成
+        source: bundled
+        invokes_at: [stage5.ui_design, stage6.implementation#web]
       - id: architecture-design
         purpose: 系统架构、API、数据库 Schema
       - id: coding
@@ -60,7 +69,7 @@ optional-workflows:
   - id: python-workflow
     required-skills: [coding-python-fastapi, sql-design]
   - id: frontend-workflow
-    required-skills: [coding-frontend-vue, ui-design]
+    required-skills: [coding-frontend-vue, ui-design, frontend-design]
   - id: aiops-workflow
     required-skills: [anomaly-detection, metric-analysis, log-investigation]
 

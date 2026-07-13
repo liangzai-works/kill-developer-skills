@@ -2,7 +2,7 @@
 name: software-factory
 description: |
   元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 9 节骨架保留 一、 / 1.1 手写编号, 文档生成后内置 scripts/fix_docx_headings.py 一刀切关掉模板自动编号, 避免双重叠加且保留中文编号。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.5.5
+version: 0.6.0
 type: meta
 ---
 
@@ -208,6 +208,42 @@ python scripts/render_arch.py --check
 
 > 前端型项目永远不跳 Stage 8 - 即使 hello world, 也要塞浏览器验收报告与截图。`n> **v0.5.2 起**: Stage 8 还必须打开 Codex 右侧 in-app browser 面板, 用户实时看到测试过程 (见搂6 / workflow.yaml Stage 8 / prompts/review.md).
 
+## 6.5 外部 Skill 注入点 (v0.6.0 新增)
+
+在原有 Phase / Stage 流水线之上, 预留两处外部 Skill 注入点. 详见 `skill-manifest.yaml#workflows[software-factory].required-skills`.
+
+### 6.5.1 需求阶段: pm-review-board
+
+- **触发位置**: `phase1.review` (在 `phase1.spec` 写出 `01_<项目名>_需求规格说明书.md` 之后, Phase 2 启动之前)
+- **职责**: 对刚生成的 PRD 走 6 角色并行评审 (产品 / 研发 / 测试 / 设计 / 运营 / 法务)
+- **输入**: `01_<项目名>_需求规格说明书.md`
+- **输出**: `01_<项目名>_需求评审记录.md` (沿用 pm-review-board 输出格式)
+- **安装**: `$skill-installer --repo hexi664/pm-review-board --path . --name pm-review-board`
+- **门禁**:
+  - ✅ 通过 / ⚠️ 有条件通过 → 评审记录作为附件进入 Phase 2
+  - ❌ 不通过 → 阻断项回写到 spec.md "待澄清问题", retry(1) `phase1.spec`
+- **备注**: 仓库 `hexi664/pm-review-board` 内置 skill 名为 `SPACE-review-board`, manifest 中以仓库别名 `pm-review-board` 作为引用 ID
+
+### 6.5.2 设计阶段: frontend-design
+
+- **触发位置**:`uses_skill: frontend-design` 同时挂在两个 stage 上
+  - `stage5.ui_design` — 写 `04b_<项目名>_UI设计.md` 与 `prototype.html` 时, 把 frontend-design 作为设计哲学源头
+  - `stage6.implementation#web` — 写 `源代码/<项目名>-web/` 实际源码时, 同样以 frontend-design 作为视觉指导思想
+- **职责**: 提供"先定 token + 节奏 + 签名元素, 再写代码"两段式工作流, 拒绝 AI 默认三件套 (奶油底+棕红强调 / 纯黑底+荧光绿 / 报版三件套)
+- **前置要求**: 调用 `$frontend-design` skill 读取其完整设计哲学 (已在本地 `$CODEX_HOME/skills/frontend-design` 安装)
+- **约束落地 (见 `prompts/coding.md` 前端约束区)**:
+  - 调色 4 个具名 hex, 排版 3 角色, 至少一个标志性元素, 至少一处可辩护的"出格选择"
+  - 不允许把 frontend-design 当成"再加几行 CSS"
+
+### 6.5.3 注入点对照表
+
+| 阶段 | 注入 Skill | 触发 stage | 产物 |
+|------|-----------|-----------|------|
+| Phase 1 / 需求 | `pm-review-board` | `phase1.review` | `01_<项目名>_需求评审记录.md` |
+| Phase 2 / Stage 5 | `frontend-design` | `stage5.ui_design` | `04b_<项目名>_UI设计.md` + `prototype.html` |
+| Phase 2 / Stage 6 (web 子任务) | `frontend-design` | `stage6.implementation` | `源代码/<项目名>-web/` |
+
+
 ## 7. 强制 UI Artifact 规则 (v0.3.0 继承)
 
 任何含有前端 UI 的项目都必须塞 UI design artifact:
@@ -254,6 +290,27 @@ $software-factory --rerun=stage2
 2. 用户提到 "测试过程中也没有打开浏览器" - v0.5.2 已经加了 Stage 8 强制步骤, 但需要确认 (a) taskmgr 是不是 `has_frontend` 项目 (b) agent 走 Stage 8 时是否调了 control-in-app-browser. **请提供 taskmgr 工作空间 `06_*_验收报告.md` 或 `screenshots/08-*.png` 的内容**, 我能看到 Stage 8 是否执行.
 
 ---
+
+## 16. v0.6.0 变更日志
+
+### 新增
+
+- **新增 pm-review-board 注入点 (需求阶段)**:
+  - `skill-manifest.yaml` 注册 `pm-review-board` (仓库别名, 实际 skill 名 `SPACE-review-board`)
+  - `workflow.yaml` 新增 `phase1.review` 阶段, 在 `phase1.spec` 之后 / Phase 2 之前
+  - `prompts/requirement.md` 新增 step 6: PRD 6 角色自检评审
+  - `SKILL.md` 新增 6.5.1 章节描述触发位置 / 输入 / 输出 / 门禁
+- **新增 frontend-design 注入点 (设计阶段)**:
+  - `skill-manject.yaml` 注册 `frontend-design` (本地已装, source=bundled)
+  - `workflow.yaml` 把 `frontend-design` 挂在 `stage5.ui_design` 与 `stage6.implementation#web`
+  - `prompts/coding.md` 前端约束区补设计哲学落地 5 条 + 别再忘记补一条
+  - `SKILL.md` 新增 6.5.2 章节描述两段式工作流 (token + 节奏 + 签名元素 → 写代码)
+- **SKILL.md 新增 6.5.3 注入点对照表**
+
+### 反馈来源
+
+用户希望把多角色 PRD 评审前置到需求阶段末尾, 避免 Phase 2 写代码后才发现需求漏洞; 同时把前端视觉设计从"通用 AI 默认风格"换成有原则的 `frontend-design`.
+
 
 ## 15. v0.5.5 变更日志
 
