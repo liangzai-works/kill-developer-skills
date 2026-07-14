@@ -1,7 +1,7 @@
 # prompts/review.md
 
 > 用于 software-factory Stage 7/8 (验收 + 测试 + 评审) 的引导式 Prompt.
-> v0.5.2: Stage 8 强制打开 Codex 右侧 in-app browser 面板, 不允许纯 headless 跑.
+> v0.6.1: Codex Desktop 的 Stage 8 强制打开右侧 in-app browser；Codex CLI 没有该面板时，走内置 Playwright WebM 录屏兜底.
 
 ## 你是谁
 
@@ -97,18 +97,34 @@ const dom2 = await tab.dom_cua.get_visible_dom();
 ### 步骤 3 - 截图 (若用户要求存档 PNG)
 
 **优先**: 让用户在 Codex 右侧面板肉眼验证, 不用落盘截图.
-**兜底**: 若必须落盘 PNG, 起本地 headless chrome:
+**Desktop 兜底**: 若必须落盘 PNG, 起本地 headless chrome:
 ```
 "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --headless=new --disable-gpu --no-sandbox --hide-scrollbars --window-size=1280,720 --virtual-time-budget=5000 --screenshot=<workspace>/screenshots/08-01-home.png <url>
 ```
 
+### 步骤 3.5 - Codex CLI 无侧边栏时的合规替代
+
+Codex CLI 没有 Desktop 的右侧 in-app browser，不能执行 `visibility.set(true)`，也不能在报告里声称用户看到了侧边栏。此时执行 Skill 内置脚本：
+
+```bash
+py -3 -m pip install playwright
+py -3 -m playwright install chromium
+python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
+  --url http://localhost:<port>/ \
+  --out <workspace>/08b_acceptance_artifacts \
+  --scenario <workspace>/08b_stage8_scenario.json
+```
+
+脚本使用 Playwright locator 驱动 CLI 浏览器，逐步落 PNG，录制 WebM，并生成 `acceptance.json`（含 `runtime`、步骤、页面错误和控制台错误）。这是 CLI 的证据采集分支，不是 Desktop 侧边栏的替代显示；验收报告必须写明运行时和原因。
+
 ### 步骤 4 - 写验收报告
 
 落 `06_<项目名>_验收报告.md`, **必须**含以下关键词:
-- `"in-app browser"` (≥1)
-- `"右侧面板"` 或 `"iab 面板"` (≥1)
-- `"dom_cua"` 或 `"node_id"` (≥1, 证明走了正确的 API)
-- 列出每步操作 (`dom_cua.click({node_id:"2"})` 风格)
+- `"in-app browser"` (Desktop 分支至少 1 次；CLI 分支要说明未使用原因)
+- `"右侧面板"` 或 `"iab 面板"` (Desktop 分支至少 1 次)
+- `"dom_cua"` 或 `"node_id"` (Desktop 分支至少 1 次)
+- CLI 分支额外列 `runtime: cli-playwright`、WebM 路径和 `acceptance.json`
+- 列出每步操作和 PASS/FAIL 结果
 - 列 URL + 端口 + ISO 时间戳
 
 ### ❌ v0.5.4 起明确禁止
@@ -117,7 +133,7 @@ const dom2 = await tab.dom_cua.get_visible_dom();
 - ❌ `tab.content.export()` — 已知 iab 不支持
 - ❌ `tab.playwright.evaluate(...)` — 已知返回 undefined, 不要指望
 - ❌ `tab.playwright.domSnapshot()` — 已知 `incrementalAriaSnapshot is not a function`
-- ❌ `chromium.launch({headless:true})` 纯 headless 跑完后只交 screenshots (v0.5.2 已禁)
+- ❌ 在 Codex Desktop 用 `chromium.launch({headless:true})` 绕过右侧面板 (CLI 分支除外)
 - ❌ 用 selector (`button.send-btn`) 选节点 — iab 的 dom_cua 没有 selector 入口, 必须 node_id
 
 
@@ -129,7 +145,7 @@ const dom2 = await tab.dom_cua.get_visible_dom();
 |------|------|
 | Controller slice | @WebMvcTest |
 | 集成 | @SpringBootTest |
-| 浏览器 E2E | Codex in-app browser via Playwright locator (步骤见阶段 2) |
+| 浏览器 E2E | Desktop 用 Codex in-app browser + dom_cua；CLI 用 Skill 内置 Playwright runner |
 
 落 `05_<项目名>_测试报告.md`.
 

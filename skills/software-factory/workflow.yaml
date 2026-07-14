@@ -7,13 +7,13 @@
 # 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
 # v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.6.0
+version: v0.6.1
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
   详细设计文档按优先级读 `详细设计模板.docx` 作为样式基线, 生成后必须调 `scripts/fix_docx_headings.py` 后处理。
   架构图自动生成 (scripts/render_arch.py) 是 Stage 3 的内置步骤, 强制按业务模块绘制.
-  Stage 8 浏览器验收强制打开 Codex 右侧 in-app browser 面板, 不允许纯 headless 跑.
+  Stage 8 在 Codex Desktop 强制打开右侧 in-app browser 面板；Codex CLI 走内置 Playwright 录屏兜底并保留完整验收证据.
 # -------------------------------------------------------------------
 # 工作空间根 - 旧版 (requirements/ design/ development/ testing/)
 # 已废弃: 全部按 workspace_dir 单目录模式
@@ -262,20 +262,30 @@ phases:
         on_failure: "retry(2) then ask_user"
 
       - id: stage8.browser_validation
-        name: 浏览器验收 (前端必需, v0.5.2 强制打开右侧 in-app browser 面板)
+        name: 浏览器验收 (前端必需, Desktop 强制侧边栏 / CLI 强制 Playwright 录屏)
         input: [源代码/<项目名>-server/health-check.json, 04b_<项目名>_UI设计.md]
         output:
           - 06_<项目名>_验收报告.md
           - screenshots/<NN>-<语义>.png
+          - 08b_acceptance_artifacts/acceptance.json
+          - 08b_acceptance_artifacts/stage8_acceptance.webm
         gating: "has_frontend == true"
         required: true
         steps:
+          - id: browser.detect_runtime
+            name: 检测验收运行时
+            description: |
+              记录当前是 Codex Desktop 还是 Codex CLI。Desktop 走右侧 in-app browser；CLI
+              不得声称打开了侧边栏，必须转入 browser.cli_playwright_fallback.
+            output: runtime=desktop|cli
+
           - id: browser.open_in_app_panel
             name: 打开 Codex 右侧 in-app browser 面板 (强制)
+            skip_when: "runtime != desktop"
             description: |
               通过 `$browser control-in-app-browser` skill 把"对话框右侧"的 in-app browser 面板打开,
               并 navigate 到 service 健康地址. 让用户能实时看到测试过程.
-              不允许用纯 headless playwright 跑完后只交 screenshots/.
+              不允许用纯 headless playwright 跑完后只交 screenshots/；CLI 只能走下面明确的 Playwright 录屏分支.
               v0.5.4 起强制走 dom_cua + node_id (实测可用 API), 不要走 tab.screenshot / evaluate / domSnapshot.
             setup:
               - "初始化 browser-client: `await import('<plugin>/scripts/browser-client.mjs').then(m => m.setupBrowserRuntime({globals}))`"
@@ -286,7 +296,7 @@ phases:
               - "`if (!(await tab.url()).match(/localhost:\\d+/)) { await tab.goto('http://localhost:<port>/') }`"
             on_failure: stop_workflow
             forbidden_alternatives:
-              - "chromium.launch({ headless: true }) 纯 headless 跑"
+              - "在 Desktop 分支用 chromium.launch({ headless: true }) 绕过右侧面板"
               - "用其他浏览器技能绕过 in-app browser"
               # v0.5.4 加: 这些 API 看着像但实际坏 (实测踩坑)
               - "tab.screenshot({path})                  # hang 在 Statsig analytics (实测)"
@@ -296,6 +306,7 @@ phases:
 
           - id: browser.interact
             name: 用 dom_cua + node_id 驱动交互 (v0.5.4 起强制)
+            skip_when: "runtime != desktop"
             actions:
               - "先 `const dom = await tab.dom_cua.get_visible_dom()` 拿 node_id 列表"
               - "用 `tab.dom_cua.click({node_id: '<id>'})` + `tab.dom_cua.type({text: '...'})` 操作"
@@ -307,21 +318,44 @@ phases:
               - "tab.playwright.evaluate(...)   # undefined"
               - "tab.playwright.domSnapshot()   # throws"
 
+          - id: browser.optional_record
+            name: (可选) Desktop ffmpeg 桌面录屏
+            skip_when: "runtime != desktop OR user_opt_in != true"
+            command: "ffmpeg -f gdigrab -framerate 15 -i desktop -t <duration> <workspace>/screenshots/08-recording.mp4 -y"
+            output: screenshots/<NN>-recording.mp4
+
+          - id: browser.cli_playwright_fallback
+            name: CLI Playwright 录屏验收 (无侧边栏时的合规替代)
+            skip_when: "runtime != cli"
+            required: true
+            description: |
+              使用 Skill 内置 scripts/stage8_run_acceptance.py，按 UI 设计生成的场景 JSON
+              执行可视化交互。每一步保存 PNG，全程录制 WebM，生成 acceptance.json；报告必须
+              标注 runtime=cli-playwright，并说明 Codex CLI 没有右侧 in-app browser.
+            install:
+              - "py -3 -m pip install playwright"
+              - "py -3 -m playwright install chromium"
+            command: |
+              python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
+                --url http://localhost:<port>/ \
+                --out <workspace>/08b_acceptance_artifacts \
+                --scenario <workspace>/08b_stage8_scenario.json
+            output:
+              - 08b_acceptance_artifacts/frames/*.png
+              - 08b_acceptance_artifacts/stage8_acceptance.webm
+              - 08b_acceptance_artifacts/acceptance.json
+            on_failure: stop_workflow
+
           - id: browser.compose_report
             name: 写验收报告 + 收尾
             output_artifact: 06_<项目名>_验收报告.md
             required_sections:
-              - "测试时间 / 测试人 (Codex in-app browser)"
+              - "测试时间 / 测试人 / runtime"
               - "测试地址 (URL + 端口)"
               - "可执行场景清单 (按 04b_UI设计.md 走)"
               - "交互结果 (每步 PASS/FAIL + 截图引用)"
+              - "Desktop: in-app browser / 右侧面板 / dom_cua / node_id；CLI: cli-playwright / acceptance.json"
               - "已知问题 / 建议"
-
-          - id: browser.optional_record
-            name: (可选) ffmpeg 桌面录屏, 落 mp4
-            when: "user_opt_in == true"  # 默认 false, 用户说要看录屏时才开
-            command: "ffmpeg -f gdigrab -framerate 15 -i desktop -t <duration> <workspace>/screenshots/08-recording.mp4 -y"
-            output: screenshots/<NN>-recording.mp4
 
       - id: stage9.test_and_review
         name: 测试 + 评审
@@ -355,6 +389,14 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.6.1:
+      title: "Stage 8 Desktop 侧边栏与 CLI Playwright 录屏分支"
+      changes:
+        - "Desktop 继续强制打开右侧 in-app browser，并使用 dom_cua + node_id"
+        - "CLI 新增 scripts/stage8_run_acceptance.py，输出 PNG、WebM、acceptance.json"
+        - "skill-manifest 补充 Python Playwright 与 Chromium 安装、核验命令"
+        - "密码生成工具完整场景 14 步 0 错误；Skill runner 复验 4 步 0 错误"
+
   - v0.5.5:
       title: "fix_docx_headings.py 默认不剥手写编号 (二级标题回归 fix)"
       changes:

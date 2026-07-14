@@ -1,8 +1,23 @@
-# Codex in-app browser (iab) Stage 8 实战踩坑 (v0.5.4)
+# Codex in-app browser (iab) Stage 8 实战踩坑 (v0.6.1)
 
 > 这是从真实测试里摸出来的"看似能用其实坏"的 API 黑名单, 写进 skill 是为了省 token.
 >
 > 适用: Codex 桌面版 (iab) 不适用 Chrome 外部 skill.
+
+## CLI 运行时边界 (v0.6.1)
+
+Codex CLI 没有右侧 in-app browser 面板，因此不能执行或宣称执行 `visibility.set(true)`。CLI 的合规验收路径是 `scripts/stage8_run_acceptance.py`：先安装 Python Playwright 与 Chromium，再按场景 JSON 走交互，保存每步 PNG、全程 WebM 和 `acceptance.json`。验收报告必须写 `runtime: cli-playwright`，并说明未使用 iab 的原因。
+
+只有运行时明确为 CLI 时才允许脚本内部使用 headless Chromium；Codex Desktop 仍必须打开侧边栏并使用 `dom_cua` + `node_id`。
+
+```bash
+py -3 -m pip install playwright
+py -3 -m playwright install chromium
+python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
+  --url http://localhost:<port>/ \
+  --out <workspace>/08b_acceptance_artifacts \
+  --scenario <workspace>/08b_stage8_scenario.json
+```
 
 ## 推荐 API (实测可用)
 

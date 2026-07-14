@@ -2,7 +2,7 @@
 name: software-factory
 description: |
   元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 9 节骨架保留 一、 / 1.1 手写编号, 文档生成后内置 scripts/fix_docx_headings.py 一刀切关掉模板自动编号, 避免双重叠加且保留中文编号。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.6.0
+version: 0.6.1
 type: meta
 ---
 
@@ -16,13 +16,15 @@ type: meta
 
 ## 2. 不做什么
 - 不重写已有 Skill 能力
+- v0.6.1 起: Stage 8 按运行时分支执行。Codex Desktop 必须打开右侧 in-app browser；Codex CLI 无法提供该面板时，必须走本 Skill 内置的 Playwright 录屏兜底，不得静默跳过验收。
 - v0.5.4 起: **不要在 Stage 8 用下面这些看着像但实际坏的 iab API**:
   - `tab.screenshot({path})` (CDP Page.captureScreenshot 长时间 hang 在 Statsig analytics)
   - `tab.content.export()` (iab 抛 `Codex in-app browser does not support command`)
   - `tab.playwright.evaluate(...)` (永远返回 undefined, 不论返回什么类型)
   - `tab.playwright.domSnapshot()` (抛 `incrementalAriaSnapshot is not a function`)
   - 必须走 `tab.dom_cua.get_visible_dom()` 拿 node_id → `tab.dom_cua.click({node_id})` /`tab.dom_cua.type({text})`
-  - 落盘截图用本地 headless chrome 兜底 (server 进程拿不到 iab 截图)
+  - Desktop 侧落盘截图用本地 headless chrome 兜底 (server 进程拿不到 iab 截图)
+  - CLI 侧只能调用 `scripts/stage8_run_acceptance.py`，同时产出 PNG、WebM、`acceptance.json`
 - 不在用户未授权时擅自做技术决策
 - 不为节省 token 跳过阶段 (token 紧张时压缩, 不跳)
 - 不把模板文件当作产物推 git / 复制到项目工作空间
@@ -203,10 +205,10 @@ python scripts/render_arch.py --check
 | 5 | UI 设计 | 前端型必需? | 04b_<项目名>_UI设计.md + 源代码/<项目名>-web/prototype.html |
 | 6 | 实现 | ✓ | 源代码/<项目名>-server/ 与源代码/<项目名>-web/ |
 | 7 | 构建运行 | ✓ | runtime.log + health-check.json |
-| 8 | 浏览器验收 | ✓ (前端型) | 06_<项目名>_验收报告.md + screenshots/*.png (v0.5.2 强制开右侧 in-app browser 面板) |
+| 8 | 浏览器验收 | ✓ (前端型) | 06_<项目名>_验收报告.md + screenshots/*.png；CLI 另产出 `08b_acceptance_artifacts/`（PNG + WebM + JSON） |
 | 9 | 测试评审 | ✓ | 05_<项目名>_测试报告.md + 08_<项目名>_代码评审报告.md |
 
-> 前端型项目永远不跳 Stage 8 - 即使 hello world, 也要塞浏览器验收报告与截图。`n> **v0.5.2 起**: Stage 8 还必须打开 Codex 右侧 in-app browser 面板, 用户实时看到测试过程 (见搂6 / workflow.yaml Stage 8 / prompts/review.md).
+> 前端型项目永远不跳 Stage 8 - 即使 hello world, 也要塞浏览器验收报告与截图。**v0.5.2 起**，Desktop Stage 8 必须打开 Codex 右侧 in-app browser 面板；CLI 场景按 6.6 使用 Playwright 录屏兜底。
 
 ## 6.5 外部 Skill 注入点 (v0.6.0 新增)
 
@@ -242,6 +244,30 @@ python scripts/render_arch.py --check
 | Phase 1 / 需求 | `pm-review-board` | `phase1.review` | `01_<项目名>_需求评审记录.md` |
 | Phase 2 / Stage 5 | `frontend-design` | `stage5.ui_design` | `04b_<项目名>_UI设计.md` + `prototype.html` |
 | Phase 2 / Stage 6 (web 子任务) | `frontend-design` | `stage6.implementation` | `源代码/<项目名>-web/` |
+
+### 6.6 Stage 8 运行时分支与录屏验收 (v0.6.1)
+
+- **Codex Desktop**: 调用 `control-in-app-browser`，先执行 `visibility.set(true)` 打开右侧面板，再用 `dom_cua.get_visible_dom()` → `dom_cua.click/type({node_id})` 完成交互。这个分支仍是强制门禁，用户可以实时录屏或观察面板。
+- **Codex CLI**: CLI 没有 Codex 右侧面板，不得伪造“已打开侧边栏”。使用内置 `scripts/stage8_run_acceptance.py`，录制 WebM、保存每个关键步骤 PNG，并写出 `acceptance.json`；验收报告必须注明 `runtime: cli-playwright` 和未使用 in-app browser 的原因。
+- **安装与核验** (Phase 0 缺失时执行):
+
+  ```bash
+  py -3 -m pip install playwright
+  py -3 -m playwright install chromium
+  py -3 -c "from playwright.sync_api import sync_playwright; print('playwright import: OK')"
+  ```
+
+- **CLI 调用**:
+
+  ```bash
+  python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
+    --url http://localhost:<port>/ \
+    --out <项目名>工作空间/08b_acceptance_artifacts \
+    --scenario <项目名>工作空间/08b_stage8_scenario.json
+  ```
+
+- 场景 JSON 可声明 `state_selectors`，每个 `steps[]` 可使用 `click`、`fill`、`check`、`uncheck`、`press`、`wait_for`、`wait_ms`、`assert_text`；每步自动截图，最终输出 `stage8_acceptance.webm` 与 `acceptance.json`。
+- 只有运行时明确为 CLI 时才允许 Playwright `headless`；在 Codex Desktop 中不得用它替代右侧面板。
 
 
 ## 7. 强制 UI Artifact 规则 (v0.3.0 继承)
@@ -291,7 +317,20 @@ $software-factory --rerun=stage2
 
 ---
 
-## 16. v0.6.0 变更日志
+## 16. v0.6.1 变更日志
+
+### 新增
+
+- Stage 8 增加 CLI Playwright 分支，统一生成 PNG、WebM、JSON 验收证据。
+- 新增 `scripts/stage8_run_acceptance.py`，支持场景 JSON、交互断言、控制台错误收集和录屏。
+- 明确 Desktop 侧边栏强制与 CLI 无侧边栏时的合规边界，避免用纯 headless 静默绕过门禁。
+- 补充 Playwright Python 包与 Chromium 的安装、核验命令。
+
+### 验证结果
+
+- 密码生成工具：14 个验收步骤，0 个步骤错误，0 个控制台错误，成功生成 WebM 录屏。
+
+## 17. v0.6.0 变更日志
 
 ### 新增
 

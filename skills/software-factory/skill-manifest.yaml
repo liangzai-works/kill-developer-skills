@@ -56,7 +56,9 @@ workflows:
         install_hint: "$browser control-in-app-browser"
       - id: playwright
         purpose: UI 验证、截图
-        install_hint: "playwright install"
+        runtime: python
+        install_hint: "py -3 -m pip install playwright && py -3 -m playwright install chromium"
+        verify_hint: "py -3 -c \"from playwright.sync_api import sync_playwright; print('playwright import: OK')\""
       - id: testing
         purpose: 单元 / 集成 / E2E
       - id: code-review
