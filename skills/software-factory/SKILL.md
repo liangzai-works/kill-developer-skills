@@ -2,7 +2,7 @@
 name: software-factory
 description: |
   元技能 - 软件工厂工作流编排器。 按 Phase 0/1/2 流水线， 产出 NN_<项目名>_<文档名>.<ext> 系列文档与可运行代码。 详细设计文档会按 4 级优先级读取 "详细设计模板.docx" 作为样式基线 (若无则 fallback)。 文档生成后强制调用内置 scripts/fix_docx_headings.py 一刀切修复 Heading 双重编号 (模板自动编号 + 手写编号叠加)。 内置 scripts/render_arch.py 一键生成系统架构图 (PNG) 并嵌入详细设计文档， 架构图强制按业务模块维度绘制 (SpringBoot 技术分层视为反例并禁止)。 9 节骨架保留 一、 / 1.1 手写编号, 文档生成后内置 scripts/fix_docx_headings.py 一刀切关掉模板自动编号, 避免双重叠加且保留中文编号。 所有过程文件集中在 <项目名>工作空间/ 一个目录内, 数字前缀表示阶段序号。
-version: 0.6.1
+version: 0.6.2
 type: meta
 ---
 
@@ -245,7 +245,7 @@ python scripts/render_arch.py --check
 | Phase 2 / Stage 5 | `frontend-design` | `stage5.ui_design` | `04b_<项目名>_UI设计.md` + `prototype.html` |
 | Phase 2 / Stage 6 (web 子任务) | `frontend-design` | `stage6.implementation` | `源代码/<项目名>-web/` |
 
-### 6.6 Stage 8 运行时分支与录屏验收 (v0.6.1)
+### 6.6 Stage 8 运行时分支与录屏验收 (v0.6.2)
 
 - **Codex Desktop**: 调用 `control-in-app-browser`，先执行 `visibility.set(true)` 打开右侧面板，再用 `dom_cua.get_visible_dom()` → `dom_cua.click/type({node_id})` 完成交互。这个分支仍是强制门禁，用户可以实时录屏或观察面板。
 - **Codex CLI**: CLI 没有 Codex 右侧面板，不得伪造“已打开侧边栏”。使用内置 `scripts/stage8_run_acceptance.py`，录制 WebM、保存每个关键步骤 PNG，并写出 `acceptance.json`；验收报告必须注明 `runtime: cli-playwright` 和未使用 in-app browser 的原因。
@@ -267,6 +267,7 @@ python scripts/render_arch.py --check
   ```
 
 - 场景 JSON 可声明 `state_selectors`，每个 `steps[]` 可使用 `click`、`fill`、`check`、`uncheck`、`press`、`wait_for`、`wait_ms`、`assert_text`；每步自动截图，最终输出 `stage8_acceptance.webm` 与 `acceptance.json`。
+- v0.6.2 起，CLI runner 默认向页面注入高对比度录屏光标：每次 `click`、`fill`、`check`、`uncheck`、`press` 前平滑移动到目标控件，点击时显示黄色波纹。可用 `--cursor-delay-ms 320` 放慢移动，方便录屏讲解；不得关闭光标后交付录屏。
 - 只有运行时明确为 CLI 时才允许 Playwright `headless`；在 Codex Desktop 中不得用它替代右侧面板。
 
 
@@ -317,7 +318,19 @@ $software-factory --rerun=stage2
 
 ---
 
-## 16. v0.6.1 变更日志
+## 16. v0.6.2 变更日志
+
+### 修复
+
+- Playwright `record_video` 不包含系统鼠标，导致录屏无法看出自动化当前操作位置。
+- `scripts/stage8_run_acceptance.py` 注入高对比度模拟光标，自动移动到 locator 中心，并在点击时显示黄色波纹。
+- `acceptance.json` 新增 `cursor_overlay` 与 `cursor_delay_ms`，验收时可机器校验录屏光标已开启。
+
+### 验证结果
+
+- 密码生成工具：4 个交互步骤，0 个步骤错误，0 个控制台错误；截帧确认光标位于目标按钮，WebM 录屏生成成功。
+
+## 17. v0.6.1 变更日志
 
 ### 新增
 
@@ -330,7 +343,7 @@ $software-factory --rerun=stage2
 
 - 密码生成工具：14 个验收步骤，0 个步骤错误，0 个控制台错误，成功生成 WebM 录屏。
 
-## 17. v0.6.0 变更日志
+## 18. v0.6.0 变更日志
 
 ### 新增
 

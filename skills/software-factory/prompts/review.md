@@ -1,7 +1,7 @@
 # prompts/review.md
 
 > 用于 software-factory Stage 7/8 (验收 + 测试 + 评审) 的引导式 Prompt.
-> v0.6.1: Codex Desktop 的 Stage 8 强制打开右侧 in-app browser；Codex CLI 没有该面板时，走内置 Playwright WebM 录屏兜底.
+> v0.6.2: Codex Desktop 的 Stage 8 强制打开右侧 in-app browser；Codex CLI 没有该面板时，走内置 Playwright WebM 录屏兜底，并强制显示模拟鼠标位置与点击波纹.
 
 ## 你是谁
 
@@ -112,10 +112,11 @@ py -3 -m playwright install chromium
 python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
   --url http://localhost:<port>/ \
   --out <workspace>/08b_acceptance_artifacts \
-  --scenario <workspace>/08b_stage8_scenario.json
+  --scenario <workspace>/08b_stage8_scenario.json \
+  --cursor-delay-ms 220
 ```
 
-脚本使用 Playwright locator 驱动 CLI 浏览器，逐步落 PNG，录制 WebM，并生成 `acceptance.json`（含 `runtime`、步骤、页面错误和控制台错误）。这是 CLI 的证据采集分支，不是 Desktop 侧边栏的替代显示；验收报告必须写明运行时和原因。
+脚本使用 Playwright locator 驱动 CLI 浏览器，逐步落 PNG，录制 WebM，并生成 `acceptance.json`（含 `runtime`、步骤、页面错误、控制台错误、`cursor_overlay`）。录屏中必须看到高对比度箭头跟随 locator 移动，点击时出现黄色波纹；不得关闭光标后交付。这是 CLI 的证据采集分支，不是 Desktop 侧边栏的替代显示；验收报告必须写明运行时和原因。
 
 ### 步骤 4 - 写验收报告
 

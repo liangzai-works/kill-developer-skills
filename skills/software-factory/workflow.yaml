@@ -7,13 +7,13 @@
 # 详细设计 .docx 生成后必须调 scripts/fix_docx_headings.py 后处理 (禁自动编号 + 清残留)
 # v0.5.1 强化: 业务模块维度强制 (SpringBoot 技术分层视为反例)
 
-version: v0.6.1
+version: v0.6.2
 workflow: software-factory
 description: |
   从需求到可运行软件的流水线。 所有产物集中在 `<项目名>工作空间/` 一个目录, 数字前缀表示阶段序号。
   详细设计文档按优先级读 `详细设计模板.docx` 作为样式基线, 生成后必须调 `scripts/fix_docx_headings.py` 后处理。
   架构图自动生成 (scripts/render_arch.py) 是 Stage 3 的内置步骤, 强制按业务模块绘制.
-  Stage 8 在 Codex Desktop 强制打开右侧 in-app browser 面板；Codex CLI 走内置 Playwright 录屏兜底并保留完整验收证据.
+  Stage 8 在 Codex Desktop 强制打开右侧 in-app browser 面板；Codex CLI 走内置 Playwright 录屏兜底，默认显示录屏光标与点击波纹并保留完整验收证据.
 # -------------------------------------------------------------------
 # 工作空间根 - 旧版 (requirements/ design/ development/ testing/)
 # 已废弃: 全部按 workspace_dir 单目录模式
@@ -330,7 +330,8 @@ phases:
             required: true
             description: |
               使用 Skill 内置 scripts/stage8_run_acceptance.py，按 UI 设计生成的场景 JSON
-              执行可视化交互。每一步保存 PNG，全程录制 WebM，生成 acceptance.json；报告必须
+              执行可视化交互。每一步保存 PNG，全程录制 WebM；录屏必须显示高对比度模拟光标，
+              光标在每次操作前移动到目标控件并在点击时显示波纹。生成 acceptance.json；报告必须
               标注 runtime=cli-playwright，并说明 Codex CLI 没有右侧 in-app browser.
             install:
               - "py -3 -m pip install playwright"
@@ -339,7 +340,8 @@ phases:
               python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
                 --url http://localhost:<port>/ \
                 --out <workspace>/08b_acceptance_artifacts \
-                --scenario <workspace>/08b_stage8_scenario.json
+                --scenario <workspace>/08b_stage8_scenario.json \
+                --cursor-delay-ms 220
             output:
               - 08b_acceptance_artifacts/frames/*.png
               - 08b_acceptance_artifacts/stage8_acceptance.webm
@@ -389,6 +391,14 @@ controls:
     effect: "覆盖 detail_template.lookup_priority[0], 强制使用指定模板"
 
 changelog:
+  - v0.6.2:
+      title: "Playwright 录屏显示模拟鼠标位置与点击波纹"
+      changes:
+        - "stage8_run_acceptance.py 注入高对比度 SVG 光标，自动移动到目标 locator 中心"
+        - "click/check/uncheck 显示黄色点击波纹；fill/press 也先移动光标"
+        - "acceptance.json 新增 cursor_overlay 与 cursor_delay_ms"
+        - "密码生成工具 4 步复验 0 错误，截帧确认光标位于评估按钮"
+
   - v0.6.1:
       title: "Stage 8 Desktop 侧边栏与 CLI Playwright 录屏分支"
       changes:

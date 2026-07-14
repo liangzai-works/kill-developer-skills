@@ -1,4 +1,4 @@
-# Codex in-app browser (iab) Stage 8 实战踩坑 (v0.6.1)
+# Codex in-app browser (iab) Stage 8 实战踩坑 (v0.6.2)
 
 > 这是从真实测试里摸出来的"看似能用其实坏"的 API 黑名单, 写进 skill 是为了省 token.
 >
@@ -10,13 +10,16 @@ Codex CLI 没有右侧 in-app browser 面板，因此不能执行或宣称执行
 
 只有运行时明确为 CLI 时才允许脚本内部使用 headless Chromium；Codex Desktop 仍必须打开侧边栏并使用 `dom_cua` + `node_id`。
 
+v0.6.2 起 CLI runner 默认注入高对比度模拟光标，自动移动到 Playwright locator 中心，点击时显示黄色波纹。原因是 Playwright 的 `record_video` 只录页面像素，不包含系统鼠标；验收 `acceptance.json` 必须满足 `cursor_overlay: true`。
+
 ```bash
 py -3 -m pip install playwright
 py -3 -m playwright install chromium
 python "$CODEX_HOME/skills/software-factory/scripts/stage8_run_acceptance.py" \
   --url http://localhost:<port>/ \
   --out <workspace>/08b_acceptance_artifacts \
-  --scenario <workspace>/08b_stage8_scenario.json
+  --scenario <workspace>/08b_stage8_scenario.json \
+  --cursor-delay-ms 220
 ```
 
 ## 推荐 API (实测可用)

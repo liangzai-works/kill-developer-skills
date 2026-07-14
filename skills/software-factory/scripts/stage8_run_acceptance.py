@@ -13,7 +13,62 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Locator, Page, sync_playwright
+
+
+CURSOR_ID = "__stage8_visible_cursor"
+CURSOR_SCRIPT = f"""
+() => {{
+  if (document.getElementById('{CURSOR_ID}')) return;
+  const style = document.createElement('style');
+  style.textContent = `
+    #{CURSOR_ID} {{
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 28px;
+      height: 34px;
+      z-index: 2147483647;
+      pointer-events: none;
+      opacity: 0;
+      transform: translate3d(24px, 24px, 0);
+      transition: transform 220ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,.65));
+    }}
+    #{CURSOR_ID}.stage8-visible {{ opacity: 1; }}
+    #{CURSOR_ID} svg {{ display: block; width: 23px; height: 29px; }}
+    #{CURSOR_ID} .stage8-ripple {{
+      position: absolute;
+      left: -7px;
+      top: -7px;
+      width: 30px;
+      height: 30px;
+      border: 3px solid #ffdd57;
+      border-radius: 999px;
+      opacity: 0;
+      transform: scale(.35);
+    }}
+    #{CURSOR_ID}.stage8-click .stage8-ripple {{
+      animation: stage8-cursor-ripple 520ms ease-out;
+    }}
+    @keyframes stage8-cursor-ripple {{
+      0% {{ opacity: 1; transform: scale(.35); }}
+      100% {{ opacity: 0; transform: scale(1.55); }}
+    }}
+  `;
+  document.documentElement.appendChild(style);
+  const cursor = document.createElement('div');
+  cursor.id = '{CURSOR_ID}';
+  cursor.setAttribute('aria-hidden', 'true');
+  cursor.innerHTML = `
+    <svg viewBox="0 0 24 30" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 1.5V25.5L8.7 19.2L13.2 28.2L17.4 26.1L13 17.3H22L2 1.5Z"
+            fill="#151515" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+    </svg>
+    <span class="stage8-ripple"></span>`;
+  document.documentElement.appendChild(cursor);
+}}
+"""
 
 
 def load_scenario(path: str | None) -> dict[str, Any]:
@@ -36,19 +91,80 @@ def read_state(page: Page, selectors: dict[str, str]) -> dict[str, str]:
     return state
 
 
-def run_action(page: Page, action: dict[str, Any], timeout_ms: int) -> None:
+def ensure_cursor(page: Page) -> None:
+    page.evaluate(CURSOR_SCRIPT)
+
+
+def set_cursor_position(page: Page, x: float, y: float, delay_ms: int) -> None:
+    ensure_cursor(page)
+    page.evaluate(
+        f"""
+        (position) => {{
+          const cursor = document.getElementById('{CURSOR_ID}');
+          cursor.style.transform = `translate3d(${{position.x}}px, ${{position.y}}px, 0)`;
+          cursor.classList.add('stage8-visible');
+        }}
+        """,
+        {"x": round(x, 1), "y": round(y, 1)},
+    )
+    page.mouse.move(x, y, steps=10)
+    page.wait_for_timeout(delay_ms)
+
+
+def move_cursor_to(page: Page, locator: Locator, timeout_ms: int, delay_ms: int) -> None:
+    locator.scroll_into_view_if_needed(timeout=timeout_ms)
+    box = locator.bounding_box(timeout=timeout_ms)
+    if box is None:
+        raise AssertionError("目标控件没有可见区域，无法显示录屏光标")
+    set_cursor_position(
+        page,
+        box["x"] + box["width"] / 2,
+        box["y"] + box["height"] / 2,
+        delay_ms,
+    )
+
+
+def pulse_cursor(page: Page) -> None:
+    page.evaluate(
+        f"""
+        () => {{
+          const cursor = document.getElementById('{CURSOR_ID}');
+          cursor.classList.remove('stage8-click');
+          void cursor.offsetWidth;
+          cursor.classList.add('stage8-click');
+        }}
+        """
+    )
+
+
+def run_action(page: Page, action: dict[str, Any], timeout_ms: int, cursor_delay_ms: int) -> None:
     if "click" in action:
-        page.locator(action["click"]).click(timeout=timeout_ms)
+        locator = page.locator(action["click"])
+        move_cursor_to(page, locator, timeout_ms, cursor_delay_ms)
+        locator.click(timeout=timeout_ms)
+        pulse_cursor(page)
     elif "fill" in action:
         payload = action["fill"]
-        page.locator(payload["selector"]).fill(str(payload.get("text", "")), timeout=timeout_ms)
+        locator = page.locator(payload["selector"])
+        move_cursor_to(page, locator, timeout_ms, cursor_delay_ms)
+        pulse_cursor(page)
+        locator.fill(str(payload.get("text", "")), timeout=timeout_ms)
     elif "check" in action:
-        page.locator(action["check"]).check(timeout=timeout_ms)
+        locator = page.locator(action["check"])
+        move_cursor_to(page, locator, timeout_ms, cursor_delay_ms)
+        locator.check(timeout=timeout_ms)
+        pulse_cursor(page)
     elif "uncheck" in action:
-        page.locator(action["uncheck"]).uncheck(timeout=timeout_ms)
+        locator = page.locator(action["uncheck"])
+        move_cursor_to(page, locator, timeout_ms, cursor_delay_ms)
+        locator.uncheck(timeout=timeout_ms)
+        pulse_cursor(page)
     elif "press" in action:
         payload = action["press"]
-        page.locator(payload["selector"]).press(str(payload["key"]), timeout=timeout_ms)
+        locator = page.locator(payload["selector"])
+        move_cursor_to(page, locator, timeout_ms, cursor_delay_ms)
+        pulse_cursor(page)
+        locator.press(str(payload["key"]), timeout=timeout_ms)
     elif "wait_for" in action:
         payload = action["wait_for"]
         page.locator(payload["selector"]).wait_for(
@@ -76,6 +192,7 @@ def main() -> int:
     parser.add_argument("--viewport-w", type=int, default=1280)
     parser.add_argument("--viewport-h", type=int, default=720)
     parser.add_argument("--timeout-ms", type=int, default=15000)
+    parser.add_argument("--cursor-delay-ms", type=int, default=220)
     parser.add_argument("--headed", action="store_true")
     args = parser.parse_args()
 
@@ -110,6 +227,8 @@ def main() -> int:
         page.on("console", on_console)
         page.on("pageerror", lambda error: errors.append(f"pageerror: {error}"))
         page.goto(args.url, wait_until="networkidle", timeout=args.timeout_ms)
+        ensure_cursor(page)
+        set_cursor_position(page, args.viewport_w / 2, args.viewport_h / 2, args.cursor_delay_ms)
         initial_state = read_state(page, selectors)
 
         for index, step in enumerate(scenario.get("steps", [])):
@@ -118,9 +237,10 @@ def main() -> int:
             started = time.time()
             try:
                 for action in step.get("actions", []):
-                    run_action(page, action, args.timeout_ms)
+                    run_action(page, action, args.timeout_ms, args.cursor_delay_ms)
                 wait_ms = int(step.get("wait_ms", 500))
                 page.wait_for_timeout(wait_ms)
+                ensure_cursor(page)
                 shot = f"frame_{key}.png"
                 page.screenshot(path=str(frames_dir / shot), full_page=False)
                 entry.update({
@@ -156,6 +276,8 @@ def main() -> int:
         "errors": errors,
         "console_log_count": len(console_logs),
         "console_error_count": len(console_errors),
+        "cursor_overlay": True,
+        "cursor_delay_ms": args.cursor_delay_ms,
     }
     (out_dir / "acceptance.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
